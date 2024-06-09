@@ -79,3 +79,12 @@ To add new python or julia packages use the provided package managers. The Pytho
 
 For julia you can also use `] add ` in the REPL
 
+## Related works
+
+> Manuscript pending!
+
+### Conference submissions
+
+Belledonne, M., Bao, Y., & Yildirim, I. (2022). Navigational affordances are automatically computed during scene perception: Evidence from behavioral change blindness and a computational model of active attention. *Journal of Vision, 22*(14), 4128-4128.
+
+Belledonne, M., & Yildirim, I. (2021). Automatic computation of navigational affordances explains selective processing of geometry in scene perception: Behavioral and computational evidence. In *Proceedings of the Annual Meeting of the Cognitive Science Society* (Vol. 43, No. 43).
