@@ -1,0 +1,16 @@
+setuptools>=65.5.1
+scipy
+numpy
+taichi
+numba
+opencv-python-headless
+ninja
+plotly
+torch
+torchvision
+fvcore
+iopath
+ffcv
+lightning
+slurmpy @ git+https://github.com/belledon/slurm.git@master
+-e /project
