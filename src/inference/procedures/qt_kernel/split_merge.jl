@@ -1,6 +1,14 @@
 export split_merge_move, balanced_split_merge
 
+import Base.isapprox
+
 include("split_merge_gen.jl")
+
+function can_split(trace::Gen.Trace, node)
+    qt = get_retval(trace)
+    prod_node = traverse_qt(qt, node).node
+    prod_node.max_level > prod_node.level
+end
 
 function construct_translator(::MoveDirection, node::Int64)
     error("not implemented")
@@ -14,6 +22,14 @@ function construct_translator(::Merge, node::Int64)
     SymmetricTraceTranslator(qt_split_merge_proposal,
                              (Gen.get_parent(node, 4),),
                              qt_involution)
+end
+
+# for trace translator round trip
+function Base.isapprox(a::PyObject,
+                       b::PyObject; kwargs...)
+    x::Int64 = py"($a == $b).sum()"
+    n::Int64 = py"($a.size)"
+    x == n
 end
 
 function split_merge_move(trace::Gen.Trace,

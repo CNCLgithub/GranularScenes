@@ -7,7 +7,8 @@ using ImageInTerminal
 
 export save_img_array,
     softmax,
-    softmax!
+    softmax!,
+    read_json
 
 
 # index arrays using sets. Order doesn't matter
@@ -53,7 +54,7 @@ function save_img_array(array::PyObject, path::String)
 end
 
 function save_img_array(array::Array, path::String)
-    _array = permutedims(array, (3,1,2))
+    _array = permutedims(array, (3,2,1))
     clamp!(_array, 0., 1.0)
     img = colorview(RGB, _array)
     save(path, img)

@@ -54,7 +54,7 @@ function parse_commandline(c)
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 1
+        default = 2
 
         "door"
         help = "door"
@@ -112,10 +112,12 @@ function main(c=ARGS)
     # Load estimator - Adaptive MCMC
     model_params = first(query.args)
     ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                 var = 0.185)
+                                 var = 0.01)
     gt_img = GranularScenes.render(model_params.renderer, room)
-    proc = GranularScenes.load(AttentionMH, "$(@__DIR__)/attention.json";
-                               ddp_args = (ddp_params, gt_img, model_params))
+
+    proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
+                      ddp_args = (ddp_params, gt_img, model_params),
+                      protocol = UniformProtocol())
 
     println("Loaded configuration...")
 

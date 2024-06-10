@@ -56,7 +56,7 @@ function QuadTreeModel(gt::GridRoom;
         dims = Rooms.steps(gt),
         entrance = entrance(gt),
         exit = exits(gt),
-        max_depth = 4, # _max_depth(gt),
+        max_depth = _max_depth(gt),
         renderer = TaichiScene(gt; render_kwargs...),
         kwargs...
     )

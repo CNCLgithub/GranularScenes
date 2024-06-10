@@ -25,9 +25,7 @@ function load_room(idx::Int)
     GridRoom(base, d)
 end
 
-
-function mytest()
-
+function test_rv()
     res = (720, 480)
 
     room1 = load_room(1)
@@ -46,40 +44,45 @@ function mytest()
 
     println("logscore: $ls")
 
+end;
 
-    # GranularScenes.window(scene, room1)
+function test_window()
+    res = (720, 480)
 
-# end
+    room1 = load_room(1)
+
+    display(room1)
+
+    scene = TaichiScene(room1;
+                        resolution = res,
+                        window = true)
+
+    GranularScenes.window(scene, room1)
+end
+
+function test_render()
+
+    res = (128, 128)
+
+    room1 = load_room(1)
+    room2 = load_room(2)
+
+    display(room1)
+
+    scene = TaichiScene(room1;
+                        resolution = res,
+                        window = false)
 
 
-    # for _ = 1:10
-    #     GranularScenes.render(scene, room1)
-    # end
+    println("Scene 1")
+    img = GranularScenes.render(scene, room1)
+    GranularScenes.save_img_array(img, "/spaths/tests/scene1.png")
 
-    # _mu = GranularScenes.render(scene, room1)
-    # py"print(type($_mu))"
-    # mu = @pycall _mu.to_numpy()::Array
-    # clamp!(mu, 0., 1.0)
-    # reverse!(mu, dims = 1)
-
-    # @show size(mu)
-    # img = colorview(RGB, permutedims(mu, (3, 2, 1)))
-    # reverse!(img, dims = 1)
-    # display(img)
-
-
-    # _mu = GranularScenes.render(scene, room2)
-    # py"print(type($_mu))"
-    # mu = @pycall _mu.to_numpy()::Array
-    # clamp!(mu, 0., 1.0)
-    # reverse!(mu, dims = 1)
-
-    # @show size(mu)
-    # img = colorview(RGB, permutedims(mu, (3, 2, 1)))
-    # reverse!(img, dims = 1)
-    # display(img)
+    println("Scene 2")
+    img = GranularScenes.render(scene, room2)
+    GranularScenes.save_img_array(img, "/spaths/tests/scene2.png")
 
     return nothing
 end
 
-mytest();
+test_render();
