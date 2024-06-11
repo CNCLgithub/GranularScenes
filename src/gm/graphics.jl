@@ -10,7 +10,7 @@ struct TaichiScene
     obstacle_map::Matrix{Float32}
 end
 
-SPP = 120
+SPP = 30
 
 """
     $(TYPEDSIGNATURES)

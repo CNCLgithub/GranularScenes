@@ -11,10 +11,6 @@ end
 
 function rw_move(t::Gen.Trace, i::Int64)
     (new_trace, w1) = apply_random_walk(t, qt_node_random_walk, (i,))
-    # downstream = downstream_selection(no_change, t, i)
-    # used to update dowstream hcoices
-    # (new_trace, w2) = regenerate(new_trace, downstream)
-    # (new_trace, w1 + w2)
 end
 
 function rw_move(::NoChange, t::Gen.Trace, i::Int64)
@@ -22,14 +18,23 @@ function rw_move(::NoChange, t::Gen.Trace, i::Int64)
 end
 
 function rw_move(::Split, tr::Gen.Trace, node::Int64)
-    nt = tr
     result = 0.0
     for i = 1:4
-        nt, w = rw_move(nt, Gen.get_child(node, i, 4))
+        idx = Gen.get_child(node, i , 4)
+        tr, w = rw_move(tr, idx)
         result += w
     end
-    (nt, result)
+    (tr, result)
 end
+
 function rw_move(::Merge, tr::Gen.Trace, node::Int64)
     rw_move(tr, Gen.get_parent(node, 4))
+end
+
+function compare_latents(a::Gen.Trace, b::Gen.Trace, node)
+    addr = :trackers => (node, Val(:aggregation)) => :mu
+    va = a[addr]
+    vb = b[addr]
+    println("RW from $(va) -> $(vb)")
+    return nothing
 end

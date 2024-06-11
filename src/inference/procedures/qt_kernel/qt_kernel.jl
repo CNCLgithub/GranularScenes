@@ -1,4 +1,5 @@
 import Gen.regenerate
+import Base.show
 
 function Gen.regenerate(trace::Gen.RecurseTrace{S,T,U,V,W,X,Y},
                     new_args::Tuple{U,Int},
@@ -32,6 +33,16 @@ struct NoChange <: MoveDirection end
 const merge_move = Merge()
 const split_move = Split()
 const no_change  = NoChange()
+
+
+function Base.show(io::IO, ::Merge)
+    print(io, "Merge")
+end
+
+function Base.show(io::IO, ::Split)
+    print(io, "Split")
+end
+
 
 function downstream_selection(t::Gen.Trace, node::Int64)
     params = first(get_args(t))

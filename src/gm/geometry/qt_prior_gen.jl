@@ -14,7 +14,8 @@ end
                              children::Vector{QTAggNode})
     local mu
     if isempty(children)
-        mu = @trace(beta(1.25, 2.5), :mu)
+        mu = @trace(uniform(0., 1.0), :mu)
+        # mu = @trace(beta(0.1, 2.5), :mu)
     else
         mu = mean(weight.(children))
     end

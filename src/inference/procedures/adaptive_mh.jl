@@ -19,8 +19,8 @@ export AdaptiveMH,
     # Data driven proposal
     #############################################################################
 
-    ddp::Function = ddp_init_kernel
-    ddp_args::Tuple
+    ddp::Function = (_...) -> choicemap() # generate_cm_from_ddp
+    ddp_args::Tuple = ()
 
 
     #############################################################################
@@ -36,13 +36,6 @@ export AdaptiveMH,
     protocol::AttentionProtocol
 end
 
-# function load(::Type{AdaptiveMH}, path::String; kwargs...)
-#     loaded = read_json(path)
-#     AdaptiveMH(; loaded...,
-#                 kwargs...)
-# end
-
-
 const AMHChain = Gen_Compose.MHChain{StaticQuery, AdaptiveMH}
 
 function Gen_Compose.initialize_chain(proc::AdaptiveMH,
@@ -50,9 +43,11 @@ function Gen_Compose.initialize_chain(proc::AdaptiveMH,
                                       n::Int)
     # Intialize using DDP
     cm = query.observations
-    tracker_cm = generate_qt_from_ddp(proc.ddp_args...)
-    set_submap!(cm, :trackers,
-                get_submap(tracker_cm, :trackers))
+    prior_cm = proc.ddp(proc.ddp_args...)
+    if has_submap(prior_cm, :trackers)
+        set_submap!(cm, :trackers,
+                    get_submap(prior_cm, :trackers))
+    end
     trace,_ = Gen.generate(query.forward_function,
                            query.args,
                            cm)
@@ -95,10 +90,12 @@ function kernel_move!(chain::AMHChain)
     # RW moves - first stage
     for j = 1:rw_budget
         _t, alpha = rw_move(t, node)
-        rw_block_inc!(aux, _t, alpha)
+        println("RW weight: $(alpha)")
+        compare_latents(t, _t, node)
+        rw_block_inc!(aux, _t, node)
         if log(rand()) < alpha # accept?
-            @show alpha
-            rw_block_accept!(aux, _t)
+            # @show alpha
+            rw_block_accept!(aux, _t, node)
             t = _t
         end
     end
@@ -124,32 +121,47 @@ function kernel_move!(chain::AMHChain)
 
     # SM moves
     remaining_sm = sm_budget # - addition_rw_cycles
-    accept_ct = 0
     if can_split(t, node)
         is_balanced = balanced_split_merge(t, node)
         moves = is_balanced ? [split_move, merge_move] : [split_move]
         for i = 1 : remaining_sm
             move = rand(moves)
             _t, _w = split_merge_move(t, node, move)
-            for _ = 1:3
-                __t, __w = rw_move(move, _t, node)
-                w = _w + __w
-                @show w
-                if log(rand()) < w
-                    sm_block_accept!(aux, __t, node, move)
-                    sm_block_complete!(aux, protocol, __t, node, move)
-                    t = __t
-                    break
-                end
-            end
-        end
+            println("$(move) weight: $(_w)")
+            compare_latents(t, _t, move, node)
 
+            if log(rand()) < _w
+                sm_block_accept!(aux, _t, node, move)
+                sm_block_complete!(aux, protocol, _t, node, move)
+                t = _t
+                break
+            end
+            # __t = inner_rw_moves!(aux, protocol, _t, _w, move, node)
+            # if accepts(aux) > 0
+            #     t = __t
+            #     break
+            # end
+        end
     end
 
     # update trace
     chain.state = t
     chain.auxillary = aux
     return nothing
+end
+
+function inner_rw_moves!(aux, p, t, w, m, i, steps = 3)
+    for _ = 1:steps
+        _t, _w = rw_move(m, t, i)
+        __w = w + _w
+        println("$(m) + RW weight: $(_w)")
+        if log(rand()) < __w
+            sm_block_accept!(aux, _t, i, m)
+            sm_block_complete!(aux, p, _t, i, m)
+            return _t
+        end
+    end
+    return t
 end
 
 
@@ -160,10 +172,10 @@ function viz_chain(chain::AMHChain)
     # println("Attention")
     # s = size(auxillary.sensitivities)
     # display_mat(reshape(auxillary.weights, s))
-    if chain.step % 10 == 0
-        println("Inferred state")
-        display_mat(project_qt(qt))
-    end
+    # if chain.step % 10 == 0
+    println("Inferred state")
+    display_mat(project_qt(qt))
+    # end
     # println("Estimated path")
     # path = Matrix{Float64}(ex_path(chain))
     # display_mat(path)

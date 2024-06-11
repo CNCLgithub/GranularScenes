@@ -1,6 +1,6 @@
 using LinearAlgebra: rmul!
 using DataStructures: PriorityQueue
-using Base.Order: ReverseOrdering, Reverse
+using Base.Order: Ordering, ReverseOrdering, Reverse
 
 export AttentionProtocal,
     UniformProtocol,
@@ -16,7 +16,7 @@ struct UniformProtocol <: AttentionProtocol end
 
 mutable struct UniformAux <: AuxillaryState
     accepts::Int64
-    qt_idxs::PriorityQueue{Int64, Float64, ReverseOrdering}
+    qt_idxs::PriorityQueue{Int64, <:Number, <:Ordering}
 end
 
 accepts(aux::UniformAux) = aux.accepts
@@ -33,22 +33,54 @@ function AuxState(p::UniformProtocol, trace)
 end
 
 function select_node(p::UniformProtocol, aux::UniformAux)
-    denom = sum(collect(values(aux.qt_idxs)))
-    stop = 0.
-    nidxs = 0
-    for (nidx, w) = aux.qt_idxs
-        stop += w / denom
-        if rand() < stop
-            node = nidx
-            break
-        end
-    end
-    if node === 0
-        node, _ = first(aux.qt_idx)
-    end
-    # node, gr = first(aux.qt_idxs)
+    # denom = sum(collect(values(aux.qt_idxs)))
+    # stop = 0.
+    # nidxs = 0
+    # for (nidx, w) = aux.qt_idxs
+    #     stop += w / denom
+    #     if rand() < stop
+    #         node = nidx
+    #         break
+    #     end
+    # end
+    # if node === 0
+    #     node, _ = first(aux.qt_idx)
+    # end
+    node, _ = first(aux.qt_idxs)
     println("Uniform Protocol: node $(node)")
+    c = 1
+    for (element, priority) in aux.qt_idxs
+        println("$element $priority")
+        c == 3 && break
+        c += 1
+    end
+
     node
+end
+
+
+function update_queue!(queue, node::Int64, move::Split)
+    prev_val = queue[node] * 0.25
+    # copying parent's (node) value to children
+    for i = 1:4
+        cid = Gen.get_child(node, i, 4)
+        queue[cid] = prev_val
+    end
+    delete!(queue, node)
+    return nothing
+end
+
+function update_queue!(queue, node::Int64, move::Merge)
+    # merge to parent, averaging siblings relevance
+    parent = Gen.get_parent(node, 4)
+    prev_val = 0
+    for i = 1:4
+        cid = Gen.get_child(parent, i, 4)
+        prev_val += queue[cid]
+        delete!(queue, cid)
+    end
+    queue[parent] = prev_val
+    return nothing
 end
 
 function rw_block_init!(aux::UniformAux, trace)
@@ -56,17 +88,20 @@ function rw_block_init!(aux::UniformAux, trace)
     return nothing
 end
 
-function rw_block_inc!(aux::UniformAux, t::Gen.Trace, alpha)
+function rw_block_inc!(aux::UniformAux, t::Gen.Trace, node)
+    aux.qt_idxs[node] *= 0.8
     return nothing
 end
 
-function rw_block_accept!(aux::UniformAux, t::Gen.Trace)
+function rw_block_accept!(aux::UniformAux, t::Gen.Trace, node)
     aux.accepts += 1
     return nothing
 end
 
 function rw_block_complete!(aux::UniformAux, p::UniformProtocol,
                             t::Gen.Trace, node)
+    steps = aux.accepts
+    println("Accepted N=$(steps) RW steps on node $(node)")
     return nothing
 end
 
@@ -84,7 +119,7 @@ end
 
 function sm_block_complete!(aux::UniformAux, p::UniformProtocol,
                             t::Gen.Trace, node, move)
-    println("Accepted move $(move) : $(aux.accepts > 0)")
+    println("Accepted move $(move) on node $(node)")
     return nothing
 end
 
@@ -182,28 +217,4 @@ function init_queue(tr::Gen.Trace)
         q[n.node.tree_idx] = 0.1 * area(n.node)
     end
     return q
-end
-
-function update_queue!(queue, node::Int64, move::Split)
-    prev_val = queue[node] * 0.25
-    # copying parent's (node) value to children
-    for i = 1:4
-        cid = Gen.get_child(node, i, 4)
-        queue[cid] = prev_val
-    end
-    delete!(queue, node)
-    return nothing
-end
-
-function update_queue!(queue, node::Int64, move::Merge)
-    # merge to parent, averaging siblings relevance
-    parent = Gen.get_parent(node, 4)
-    prev_val = 0.
-    for i = 1:4
-        cid = Gen.get_child(parent, i, 4)
-        prev_val += queue[cid]
-        delete!(queue, cid)
-    end
-    queue[parent] = prev_val
-    return nothing
 end

@@ -57,7 +57,8 @@ function process_ddp_input(timg::PyObject, device::PyObject)
     return y
 end
 
-function generate_qt_from_ddp(ddp_params::DataDrivenState, timg, model_params,
+function generate_cm_from_ddp(ddp_params::DataDrivenState,
+                              timg, model_params,
                               min_depth::Int64 = 1)
     @unpack nn, device, var = ddp_params
 

@@ -41,10 +41,10 @@ function split_merge_move(trace::Gen.Trace,
     (new_trace, w1) = translator(trace, check = false)
     # (new_trace, w1) = mytransform(translator, trace, check = false)
     if isinf(w1)
-        @show node => direction
         @show get_depth(node)
-        @show trace[:trackers => (node, Val(:production)) => :produce]
-        @show trace[:trackers => (node, Val(:aggregation)) => :mu]
+
+        compare_latents(trace, new_trace, direction, node)
+
         if direction == split_move
             @show new_trace[:trackers => (node, Val(:production)) => :produce]
             for i = 1:4
@@ -53,7 +53,7 @@ function split_merge_move(trace::Gen.Trace,
                 @show new_trace[:trackers => (child, Val(:aggregation)) => :mu]
             end
         end
-        error("-Inf in SM move")
+        error("-Inf in $(direction) move on node $(node)")
     end
     (new_trace, w1)
 end
@@ -76,4 +76,39 @@ function balanced_split_merge(t::Gen.Trace, tidx::Int64)::Bool
     parent_idx = Gen.get_parent(tidx, 4)
     parent_st = traverse_qt(qt, parent_idx)
     all(x -> isempty(x.children), parent_st.children)
+end
+
+function compare_latents(a::Gen.Trace, b::Gen.Trace,
+                         move::Split, node::Int64)
+    addr = :trackers => (node, Val(:aggregation)) => :mu
+    va = a[addr]
+    print("Split from $(va) -> ")
+    siblings = Vector{Float64}(undef, 4)
+    for i = 1:4
+        cid = Gen.get_child(node, i, 4)
+        caddr = :trackers => (cid, Val(:aggregation)) => :mu
+        vb = b[caddr]
+        print("$(vb) ")
+    end
+    print("\n")
+    return nothing
+end
+
+function compare_latents(a::Gen.Trace, b::Gen.Trace,
+                         move::Merge, node::Int64)
+
+    siblings = Vector{Float64}(undef, 4)
+    # merge to parent, averaging siblings relevance
+    parent = Gen.get_parent(node, 4)
+    for i = 1:4
+        sid = Gen.get_child(parent, i, 4)
+        saddr = :trackers => (sid, Val(:aggregation)) => :mu
+        siblings[i] = a[saddr]
+    end
+    baddr = :trackers => (parent, Val(:aggregation)) => :mu
+    bv = b[baddr]
+
+    println("Merge from $(siblings) -> $(bv)")
+
+    return nothing
 end
