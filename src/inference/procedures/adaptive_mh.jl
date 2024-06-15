@@ -51,6 +51,10 @@ function Gen_Compose.initialize_chain(proc::AdaptiveMH,
     trace,_ = Gen.generate(query.forward_function,
                            query.args,
                            cm)
+
+    println("Initial state")
+    display_mat(project_qt(get_retval(trace)))
+
     # initialize auxillary state
     aux = AuxState(proc.protocol, trace)
     # initialize chain
@@ -66,7 +70,7 @@ function Gen_Compose.step!(chain::AMHChain)
     kernel_move!(chain)
 
     viz_chain(chain)
-    println("current score $(get_score(chain.state))")
+    # println("current score $(get_score(chain.state))")
     return nothing
 end
 
@@ -85,54 +89,57 @@ function kernel_move!(chain::AMHChain)
 
     # select node to rejuv
     node = select_node(protocol, aux)
+    # qt = get_retval(t).leaves
+    # nleaves = length(qt)
+    # node = qt[(chain.step % nleaves) + 1].node.tree_idx
 
-    rw_block_init!(aux, state)
+    rw_block_init!(aux, protocol, t)
+
     # RW moves - first stage
     for j = 1:rw_budget
         _t, alpha = rw_move(t, node)
-        println("RW weight: $(alpha)")
-        compare_latents(t, _t, node)
-        rw_block_inc!(aux, _t, node)
+        rw_block_inc!(aux, protocol, _t, node, alpha)
+        # println("RW weight: $(alpha)")
+        # compare_latents(t, _t, node)
         if log(rand()) < alpha # accept?
-            # @show alpha
-            rw_block_accept!(aux, _t, node)
+            rw_block_accept!(aux, protocol, _t, node)
             t = _t
         end
     end
 
-    # # if RW acceptance ratio is high, add more
-    # # otherwise, ready for SM
-    # accept_ratio = max(0.25, accepts(aux) / rw_budget)
-    # # TODO: integrate delta pi?
-    # addition_rw_cycles =  floor(Int64, sm_budget * accept_ratio)
+    # if RW acceptance ratio is high, add more
+    # otherwise, ready for SM
+    accept_ratio = accepts(aux) / rw_budget
+    # TODO: integrate delta pi?
+    addition_rw_cycles =  floor(Int64, sm_budget * accept_ratio)
 
-    # for j = 1:addition_rw_cycles
-    #     _t, alpha = rw_move(t, node)
-    #     rw_block_inc!(aux, _t, alpha)
-    #     if log(rand()) < alpha
-    #         rw_block_accept!(aux, _t)
-    #         t = _t
-    #     end
-    # end
+    for j = 1:addition_rw_cycles
+        _t, alpha = rw_move(t, node)
+        rw_block_inc!(aux, protocol, _t, node, alpha)
+        if log(rand()) < alpha # accept?
+            rw_block_accept!(aux, protocol, _t, node)
+            t = _t
+        end
+    end
 
     rw_block_complete!(aux, protocol, t, node)
 
     sm_block_init!(aux, protocol)
 
     # SM moves
-    remaining_sm = sm_budget # - addition_rw_cycles
-    if can_split(t, node)
+    remaining_sm = sm_budget - addition_rw_cycles
+    if can_split(t, node) # REVIEW: why only split?
         is_balanced = balanced_split_merge(t, node)
         moves = is_balanced ? [split_move, merge_move] : [split_move]
         for i = 1 : remaining_sm
             move = rand(moves)
             _t, _w = split_merge_move(t, node, move)
-            println("$(move) weight: $(_w)")
-            compare_latents(t, _t, move, node)
 
             if log(rand()) < _w
-                sm_block_accept!(aux, _t, node, move)
-                sm_block_complete!(aux, protocol, _t, node, move)
+                # println("$(move) weight: $(_w)")
+                # compare_latents(t, _t, move, node)
+                sm_block_accept!(aux, node, move)
+                sm_block_complete!(aux, protocol, node, move)
                 t = _t
                 break
             end
@@ -166,16 +173,15 @@ end
 
 
 function viz_chain(chain::AMHChain)
+    chain.step % 10 == 0 || return nothing
     @unpack auxillary, state = chain
     params = first(get_args(state))
     qt = get_retval(state)
     # println("Attention")
     # s = size(auxillary.sensitivities)
     # display_mat(reshape(auxillary.weights, s))
-    # if chain.step % 10 == 0
     println("Inferred state")
     display_mat(project_qt(qt))
-    # end
     # println("Estimated path")
     # path = Matrix{Float64}(ex_path(chain))
     # display_mat(path)

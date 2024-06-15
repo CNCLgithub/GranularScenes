@@ -12,7 +12,7 @@ using GranularScenes
 
 using Random
 
-dataset = "ccn_2023_exp"
+dataset = "path_block_2024-03-14"
 
 function parse_commandline(c)
     s = ArgParseSettings()
@@ -54,7 +54,7 @@ function parse_commandline(c)
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 2
+        default = 1
 
         "door"
         help = "door"
@@ -107,17 +107,23 @@ function main(c=ARGS)
     # Load query (identifies the estimand)
     query = query_from_params(room, args["gm"];
                               render_kwargs =
-                                  Dict(:resolution => (128,128)))
+                                  Dict(:resolution => (256,256)))
 
     # Load estimator - Adaptive MCMC
     model_params = first(query.args)
     ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                 var = 0.01)
+                                 var = 0.015)
     gt_img = GranularScenes.render(model_params.renderer, room)
 
     proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
-                      ddp_args = (ddp_params, gt_img, model_params),
-                      protocol = UniformProtocol())
+                      ddp = generate_cm_from_ddp,
+                      ddp_args = (ddp_params, gt_img, model_params, 3),
+                      # no attention
+                      # protocol = UniformProtocol(),
+                      #
+                      # adaptive computation
+                      protocol = AdaptiveComputation(),
+                      )
 
     println("Loaded configuration...")
 
@@ -133,7 +139,7 @@ function main(c=ARGS)
 
     # how many chains to run
     for c = 1:args["chain"]
-        Random.seed!(c)
+        # Random.seed!(c)
         out = joinpath(out_path, "$(c).jld2")
 
         if isfile(out) && args["restart"]

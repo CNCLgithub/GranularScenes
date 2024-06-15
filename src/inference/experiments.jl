@@ -31,11 +31,13 @@ function ex_granularity(c::AMHChain)
 end
 
 function ex_path(c::AMHChain)
-    st = get_retval(c.state)
-    n = size(st.qt.projected, 1)
-    leaves = st.qt.leaves
+    params = first(get_args(c.state))
+    qt = get_retval(c.state)
+    path = quad_tree_path(c.state)
+    n = first(params.dims)
+    leaves = qt.leaves
     m = fill(false, (n,n))
-    for e in st.path.edges
+    for e in path.edges
         src_node = leaves[src(e)].node
         idx = node_to_idx(src_node, n)
         m[idx] .= true

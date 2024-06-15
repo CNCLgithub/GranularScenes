@@ -1,4 +1,6 @@
-export DataDrivenState, dd_state_proposal
+export DataDrivenState, dd_state_proposal,
+    generate_cm_from_ddp
+
 using Statistics: std
 
 @with_kw struct DataDrivenState
@@ -73,11 +75,13 @@ function generate_cm_from_ddp(ddp_params::DataDrivenState,
     # Iterate through QT
     cm = choicemap()
     queue = [model_params.start_node]
+    nodes = 0
     while !isempty(queue)
         head = pop!(queue)
         idx = node_to_idx(head, d)
         mu = mean(state[idx])
-        sd = std(state[idx], mean = mu)
+        sd = length(idx) == 1 ? 0. : std(state[idx], mean = mu)
+        # @show sd
         # split = sd > ddp_params.var && head.level < head.max_level
         # restricting depth of nn
         split = head.level < min_depth || (sd > ddp_params.var && head.level < max_depth)
@@ -88,7 +92,9 @@ function generate_cm_from_ddp(ddp_params::DataDrivenState,
         else
             # terminal node, add aggregation choice
             cm[:trackers => (head.tree_idx, Val(:aggregation)) => :mu] = mu
+            nodes += 1
         end
     end
+    println("DDP yielded $nodes qt leaves")
     return cm
 end

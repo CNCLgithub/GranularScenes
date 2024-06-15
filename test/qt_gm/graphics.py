@@ -50,7 +50,7 @@ walls = np.array([
     [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
 ], dtype = np.int32).repeat(2, 0).repeat(2, 1)
 
-scene = vxl_scene(32, (512, 512), window = False)
+scene = vxl_scene(32, (128, 128), window = False)
 # scene = vxl_scene(32, (720, 480), window = True)
 scene.set_exterior(walls)
 scene.set_lights(32)
@@ -94,11 +94,17 @@ scene.renderer.set_camera_pos(1.78, -0.03, -0.015)
 # print(f'Rendering time: {elapsed}')
 # scene.save_img(img, dirpath = "test/screenshots/")
 
-
-rimg = scene.render_scene(15).to_numpy()
+spp = 30
+rimg = scene.render_scene(spp).to_numpy()
 # rimg = scene.random(0.1, 15)
 print(type(rimg))
 print(rimg.shape)
-# scene.save_img(rimg, dirpath = "test/screenshots/")
-logpdf = scene.logpdf(rimg, 0.1, 15)
-print(f'Logpdf: {logpdf}')
+scene.save_img(rimg, dirpath = "test/screenshots/")
+t = time.time()
+nsteps = 20
+for _ in range(nsteps):
+    logpdf = scene.logpdf(rimg, 0.1, spp)
+    print(f'Logpdf: {logpdf}')
+
+elapsed = (time.time() - t) / nsteps
+print(f'Time per call: {elapsed}')

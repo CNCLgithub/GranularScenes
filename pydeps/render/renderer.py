@@ -5,7 +5,7 @@ import numpy as np
 from .math_utils import (eps, inf, out_dir, ray_aabb_intersection,
                          round_idx)
 
-MAX_RAY_DEPTH = 4
+MAX_RAY_DEPTH = 5
 use_directional_light = True
 
 DIS_LIMIT = 100
@@ -191,7 +191,7 @@ class Renderer:
 
                 # returns material (1, 2) or 0 if empty voxel
                 # NOTE: `unsafe` ok because `inside_particle_grid`
-                collided = ti.random() < self.unsafe_query_density(ipos)
+                collided = ti.random() < self.query_density(ipos)
 
                 if collided:
                     mini = (ipos - o + ti.Vector([0.5, 0.5, 0.5]) -
@@ -268,9 +268,9 @@ class Renderer:
     def get_cast_dir(self, u, v):
         fov = self.fov[None]
         d = (self.look_at[None] - self.camera_pos[None]).normalized()
-        fu = (2 * fov * (u + ti.random(ti.f32)) / self.image_res[1] -
+        fu = (2 * fov * (u + 0.1 * ti.random(ti.f32)) / self.image_res[1] -
               fov * self.aspect_ratio - 1e-5)
-        fv = 2 * fov * (v + ti.random(ti.f32)) / self.image_res[1] - fov - 1e-5
+        fv = 2 * fov * (v + 0.1 * ti.random(ti.f32)) / self.image_res[1] - fov - 1e-5
         du = d.cross(self.up[None]).normalized()
         dv = du.cross(d).normalized()
         d = (d + fu * du + fv * dv).normalized()
@@ -306,9 +306,9 @@ class Renderer:
 
                     if ti.static(use_directional_light):
                         dir_noise = ti.Vector([
-                            ti.random() - 0.5,
-                            ti.random() - 0.5,
-                            ti.random() - 0.5
+                            (ti.random() - 0.5),
+                            (ti.random() - 0.5),
+                            (ti.random() - 0.5),
                         ]) * self.light_direction_noise[None]
                         light_dir = (self.light_direction[None] +
                                      dir_noise).normalized()
@@ -382,9 +382,12 @@ class Renderer:
         result = 0.
         for u, v in self._rendered_image:
             for c in ti.static(range(3)):
+                # ls = 0.
+                # if self._rendered_image[u, v][c] > 0.01 and img[u,v,c] > 0.01:
                 z = (img[u, v, c] - self._rendered_image[u, v][c]) / ti.log(var)
                 zsqr = z * z
-                result += -1 * (zsqr + ti.log(2*np.pi))/2 - ti.log(var)
+                ls = -1 * (zsqr + ti.log(2*np.pi))/2 - ti.log(var)
+                result += ls
         return result
 
     @ti.kernel

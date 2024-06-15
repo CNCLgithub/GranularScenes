@@ -14,6 +14,8 @@ end
                              children::Vector{QTAggNode})
     local mu
     if isempty(children)
+        # w = 1.0 - exp2(-n.level + 1)
+        # mu = @trace(beta_uniform(w, 0.3, 0.3), :mu)
         mu = @trace(uniform(0., 1.0), :mu)
         # mu = @trace(beta(0.1, 2.5), :mu)
     else

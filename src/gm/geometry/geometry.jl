@@ -1,4 +1,5 @@
 using Base.Iterators: product
+using LinearAlgebra: norm
 
 export QTProdNode, QTAggNode, QuadTree
 
@@ -163,8 +164,9 @@ end
 # REVIEW: Some way to parameterize weights?
 function produce_weight(n::QTProdNode)::Float64
     @unpack level, max_level = n
-    level == 1 ? 0.99 :
-        (level == max_level ? 0. : 0.25)
+    level == max_level ? 0. : 0.5
+    # level == 1 ? 0. :
+    #     (level == max_level ? 0. : 0.3)
 end
 
 const sqrt_v = SVector{2, Float64}(fill(sqrt(2), 2))
@@ -395,7 +397,8 @@ function project_qt!(gs::Matrix{Float32},
     d = size(gs, 1)
     for x in lv
         idx = node_to_idx(x.node, d)
-        w = weight(x) > 0.01 ? weight(x) : 0.0
+        w = weight(x)
+        w = w > 0.01 ? w : 0.0
         for i = idx
             gs[i] = w
         end

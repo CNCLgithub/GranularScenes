@@ -1,3 +1,20 @@
+export QTPath,
+    qt_a_star
+
+struct QTPath
+    g::SimpleGraph
+    dm::Matrix{Float64}
+    edges::Vector{AbstractEdge}
+end
+
+function QTPath(st::QTAggNode)
+    g = SimpleGraph(1)
+    dm = Matrix{Float64}(undef, 1, 1)
+    dm[1] = weight(st) * area(st.node)
+    edges = [Graphs.SimpleEdge(1,1)]
+    QTPath(g, dm, edges)
+end
+
 function a_star_heuristic(nodes::Vector{QTAggNode}, dest::QTAggNode,
                           scale::Float64)
     src -> dist(nodes[src].node, dest.node) * scale
@@ -30,6 +47,8 @@ end
     qt_a_star(qt, d, ent, ext)
 
 Applies `a_star` to the quad tree.
+
+---
 
 # Arguments
 - `qt::QuadTree`: A quad tree to traverse over leaves

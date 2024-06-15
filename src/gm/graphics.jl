@@ -6,11 +6,11 @@ export TaichiScene,
 
 struct TaichiScene
     voxscene::PyObject
-    voxel_buffer::PyObject
+    voxel_buffer::PyObject # REVIEW: needed?
     obstacle_map::Matrix{Float32}
 end
 
-SPP = 30
+SPP = 200
 
 """
     $(TYPEDSIGNATURES)
@@ -95,7 +95,7 @@ function Gen.random(::TaichiObserve, s::TaichiScene, obj, var::Float32)
     @pycall vx.reset_voxels()::PyObject
     write_obstacles!(s.obstacle_map, obj)
     @pycall vx.set_obstacles(s.obstacle_map)::PyObject
-    result = @pycall vx.random(var, 25)::PyObject
+    result = @pycall vx.random(var, SPP)::PyObject
     return result
 end
 

@@ -3,6 +3,8 @@ import yaml
 import torch
 import numpy as np
 
+from torchvision.transforms.functional import resize
+
 from . vae import VAE, Decoder
 from . tasks import SceneEmbedding, OGDecoder
 
@@ -46,6 +48,7 @@ def dd_state(nn, x, device):
    if x.dim == 3:
       # single image -> batchxCxHxW
       x = x.unsqueeze(0)
+      x = resize(x, (128, 128))
    x = nn.forward(x)
    x = x.cpu().detach().numpy()
    return x

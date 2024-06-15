@@ -73,19 +73,6 @@ function _max_depth(r::GridRoom)
 end
 
 
-struct QTPath
-    g::SimpleGraph
-    dm::Matrix{Float64}
-    edges::Vector{AbstractEdge}
-end
-
-function QTPath(st::QTAggNode)
-    g = SimpleGraph(1)
-    dm = Matrix{Float64}(undef, 1, 1)
-    dm[1] = weight(st) * area(st.node)
-    edges = [Graphs.SimpleEdge(1,1)]
-    QTPath(g, dm, edges)
-end
 
 # struct QuadTreeState
 #     qt::QuadTree
@@ -130,3 +117,4 @@ function create_obs(p::QuadTreeModel, r::GridRoom)
 end
 
 include("qt_model_gen.jl")
+include("planning.jl")

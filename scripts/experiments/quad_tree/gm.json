@@ -1,4 +1,4 @@
 {
-   "pixel_var" : 0.1,
-   "obs_cost" : 10.0
+   "pixel_var" : 0.05,
+   "obs_cost" : 2.0
 }
