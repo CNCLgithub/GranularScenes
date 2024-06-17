@@ -187,7 +187,8 @@ class Renderer:
             while running:
                 # outside range of set voxels
                 if not self.inside_particle_grid(ipos):
-                    running = 0
+                    # running = 0
+                    break
 
                 # returns material (1, 2) or 0 if empty voxel
                 # NOTE: `unsafe` ok because `inside_particle_grid`
@@ -212,8 +213,8 @@ class Renderer:
                     dis += mm * rsign * rinv
                     ipos += mm * rsign
                     normal = -mm * rsign
-                # i += 1 # see above
-        return hit_distance, normal, c, hit_light, voxel_index
+
+        return hit_distance #, normal, c, hit_light, voxel_index
 
     @ti.func
     def inside_particle_grid(self, ipos):
@@ -228,25 +229,17 @@ class Renderer:
         normal = ti.Vector([0.0, 0.0, 0.0])
         c = ti.Vector([0.0, 0.0, 0.0])
         hit_light = 0
-        closest, normal, c, hit_light, vx_idx = self.dda_voxel(pos, d)
+        # closest, normal, c, hit_light, vx_idx = self.dda_voxel(pos, d)
+        hit_distance = self.dda_voxel(pos, d)
 
         # REVIEW: I think this is to collide with the floor
         ray_march_dist = self.ray_march(pos, d)
-        if ray_march_dist < DIS_LIMIT and ray_march_dist < closest:
-            closest = ray_march_dist
+        if ray_march_dist < DIS_LIMIT and ray_march_dist < hit_distance:
+            hit_distance = ray_march_dist
             normal = self.sdf_normal(pos + d * closest)
             c = self.sdf_color(pos + d * closest)
 
-        # REVIEW: is this used?
-        # Highlight the selected voxel
-        # if self.cast_voxel_hit[None]:
-        #     cast_vx_idx = self.cast_voxel_index[None]
-        #     if all(cast_vx_idx == vx_idx):
-        #         c = ti.Vector([1.0, 0.65, 0.0])
-        #         # For light sources, we actually invert the material to make it
-        #         # more obvious
-        #         hit_light = 1 - hit_light
-        return closest, normal, c, hit_light
+        return hit_distance # , normal, c, hit_light
 
     @ti.kernel
     def set_camera_pos(self, x: ti.f32, y: ti.f32, z: ti.f32):
@@ -268,9 +261,9 @@ class Renderer:
     def get_cast_dir(self, u, v):
         fov = self.fov[None]
         d = (self.look_at[None] - self.camera_pos[None]).normalized()
-        fu = (2 * fov * (u + 0.1 * ti.random(ti.f32)) / self.image_res[1] -
+        fu = (2 * fov * (u + ti.random(ti.f32)) / self.image_res[1] -
               fov * self.aspect_ratio - 1e-5)
-        fv = 2 * fov * (v + 0.1 * ti.random(ti.f32)) / self.image_res[1] - fov - 1e-5
+        fv = 2 * fov * (v + ti.random(ti.f32)) / self.image_res[1] - fov - 1e-5
         du = d.cross(self.up[None]).normalized()
         dv = du.cross(d).normalized()
         d = (d + fu * du + fv * dv).normalized()
@@ -295,7 +288,8 @@ class Renderer:
             # Tracing begin
             for bounce in range(MAX_RAY_DEPTH):
                 depth += 1
-                closest, normal, c, hit_light = self.next_hit(pos, d, t)
+                hit_dist = self.next_hit(pos, d, t)
+                # closest, normal, c, hit_light = self.next_hit(pos, d, t)
                 hit_pos = pos + closest * d
 
                 # bounce ray off voxel
