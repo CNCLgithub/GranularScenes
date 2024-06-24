@@ -154,7 +154,7 @@ function rw_block_inc!(aux::AdaptiveAux, p::AdaptiveComputation,
     obj_t_prime = p.objective(t)
     aux.delta_pi += p.distance(aux.objective, obj_t_prime)
     # ds = alpha < -20 ? 0.0 : exp(alpha)
-    aux.delta_s += exp(alpha)
+    aux.delta_s -= -0.1 #exp(alpha)
     aux.steps += 1
     return nothing
 end
@@ -164,6 +164,7 @@ function rw_block_accept!(aux::AdaptiveAux,
                           p::AdaptiveComputation,
                           t::Gen.Trace, node)
     aux.accepts += 1
+    aux.delta_s += 0.5
     aux.objective = p.objective(t)
     return nothing
 end
@@ -178,6 +179,7 @@ function rw_block_complete!(aux::AdaptiveAux,
                             t, node)
     # compute goal-relevance
     @unpack delta_pi, delta_s, steps, accepts = aux
+    delta_s = clamp(delta_s, 0., 1.)
     goal_relevance = log(delta_pi) + log(delta_s) - log(steps)
 
     # update aux state

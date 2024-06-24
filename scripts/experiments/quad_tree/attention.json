@@ -1,5 +1,5 @@
 {
-    "samples" : 100,
-    "rw_budget" : 3,
-    "sm_budget" : 10
+    "samples" : 1000,
+    "rw_budget" : 5,
+    "sm_budget" : 15
 }

@@ -4,20 +4,22 @@ import time
 from pydeps import vxl_scene
 import numpy as np
 
+
+
 obstacles = np.array([
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    [0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0],
-    [0,0,1,0,0,1,0,1,1,1,0,0,0,0,0,0],
-    [0,0,1,1,1,1,0,1,1,1,0,0,0,0,0,0],
-    [0,0,1,0,0,1,0,1,0,0,0,0,0,0,0,0],
-    [0,0,1,0,0,1,0,1,1,1,0,0,0,0,0,0],
+    [0,0,.8,0,0,.8,0,0,0,0,0,0,0,0,0,0],
+    [0,0,.8,0,0,.8,0,1,1,1,0,0,0,0,0,0],
+    [0,0,.8,.8,.8,.8,0,1,1,1,0,0,0,0,0,0],
+    [0,0,.8,0,0,.8,0,1,0,0,0,0,0,0,0,0],
+    [0,0,.8,0,0,.8,0,1,1,1,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,1,0,0,0,0,0,1,1,1,0,0,0,0,0],
     [0,0,1,0,0,0,0,1,0,0,0,1,0,0,0,0],
     [0,0,1,0,0,0,0,1,0,0,0,1,0,0,0,0],
     [0,0,1,0,0,0,0,1,0,0,0,1,0,0,0,0],
-    [0,0,1,1,1,1,0,0,1,1,1,1,0,0,0,0],
+    [0,0,1,1,1,1,0,0,.1,.3,.5,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -51,8 +53,10 @@ walls = np.array([
 ], dtype = np.int32).repeat(2, 0).repeat(2, 1)
 
 scene = vxl_scene(32, (128, 128), window = False)
+
 # scene = vxl_scene(32, (720, 480), window = True)
 scene.set_exterior(walls)
+print(f'{scene.renderer.floor_height[None]=}')
 scene.set_lights(32)
 scene.set_obstacles(obstacles)
 scene.renderer.set_look_at(-0.3, -0.2, -0.016)
@@ -94,17 +98,19 @@ scene.renderer.set_camera_pos(1.78, -0.03, -0.015)
 # print(f'Rendering time: {elapsed}')
 # scene.save_img(img, dirpath = "test/screenshots/")
 
-spp = 30
-rimg = scene.render_scene(spp).to_numpy()
-# rimg = scene.random(0.1, 15)
+spp = 20
+rimg = scene.render_scene().to_numpy()
+# rimg = scene.random(0.1)
 print(type(rimg))
 print(rimg.shape)
 scene.save_img(rimg, dirpath = "test/screenshots/")
-t = time.time()
-nsteps = 20
-for _ in range(nsteps):
-    logpdf = scene.logpdf(rimg, 0.1, spp)
-    print(f'Logpdf: {logpdf}')
+# t = time.time()
+# nsteps = 10
+# logpdf = scene.logpdf(rimg, 0.1)
 
-elapsed = (time.time() - t) / nsteps
-print(f'Time per call: {elapsed}')
+# for _ in range(nsteps):
+#     logpdf = scene.logpdf(rimg, 0.1)
+#     print(f'Logpdf: {logpdf}')
+
+# elapsed = (time.time() - t) / nsteps
+# print(f'Time per call: {elapsed}')

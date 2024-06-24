@@ -182,7 +182,8 @@ class Scene:
         hn = n // 2
         height = 2 * n // 3 - hn
 
-        self.set_floor(-hn + 0.05, (1.0, 1.0, 1.0))
+        # floor is fractional coord
+        self.set_floor(-0.5, (1.0, 1.0, 1.0))
 
         for I in ti.grouped(walls):
             if walls[I]:
@@ -205,8 +206,8 @@ class Scene:
         hn = n // 2
         height = 2 * n // 3 - hn
         # add lights to the ceiling
-        for i in range(-n // 8, n // 8):
-            for j in range(-n // 8, n // 8):
+        for i in range(-n // 4, n // 4):
+            for j in range(-n // 4, n // 4):
                 pos = vec3(i, height, j)
                 self.set_voxel(pos, 2, vec3(1, 1, 1), reset = True)
 
@@ -228,32 +229,9 @@ class Scene:
                            val,
                            blue)
 
-
-
     def set_obstacles(self, omap):
-        # t = time.time()
         self.renderer.rand_buffer.from_numpy(omap)
         self.renderer.set_obstacles()
-        # print(f'elapsed `set_obstacles`: {time.time() - t}')
-        # _blue = vec3(0.3, 0.3, 0.9)
-        # blue = vec3(0.3, 0.3, 0.9)
-        # # blue = self.renderer.to_vec3u(_blue)
-        # #
-        # self.renderer.rand_buffer.from_numpy(omap)
-
-        # nx,ny = omap.shape
-        # n = max(nx, ny)
-        # hn = n // 2
-        # oheight = 1 * n // 6 - hn
-
-        # ti.loop_config(block_dim=8)
-        # # for I in ti.grouped(omap):
-        # for i,j in self.renderer.rand_buffer:
-        #     if omap[i, j] > 0.:
-        #         # x = i - hn
-        #         # z = j - hn
-        #         for y in range(-hn, oheight):
-        #             self.set_voxel(vec3(i - hn, y, j - hn), omap[i, j], blue)
 
     def reset_voxels(self):
         self.renderer.reset_voxels()
@@ -267,15 +245,15 @@ class Scene:
         return self.renderer.rand_buffer
 
 
-    def random(self, var: float, spp:int):
+    def random(self, var: float):
         result = np.zeros((*self.renderer.image_res, 3),
                           dtype = np.float32)
-        self.render_scene(spp)
+        self.render_scene()
         self.renderer.random(result, var)
         return result
 
-    def logpdf(self, img, var, spp):
-        self.render_scene(spp)
+    def logpdf(self, img, var):
+        self.render_scene()
         return self.renderer.logpdf(img, var)
 
 
@@ -287,7 +265,7 @@ class Scene:
             print(f"Screenshot has been saved to {fname}")
 
 
-    def render_scene(self, spp : int):
+    def render_scene(self):
 
         # t = time.time()
         self.renderer.recompute_bbox()
@@ -296,8 +274,7 @@ class Scene:
         # print(f'reset time: {elapsed}')
 
         # t = time.time()
-        for _ in range(spp):
-            self.renderer.accumulate()
+        self.renderer.accumulate()
         # elapsed = time.time() - t
         # print(f'accumulate time: {elapsed}')
 

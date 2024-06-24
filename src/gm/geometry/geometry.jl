@@ -398,7 +398,7 @@ function project_qt!(gs::Matrix{Float32},
     for x in lv
         idx = node_to_idx(x.node, d)
         w = weight(x)
-        w = w > 0.01 ? w : 0.0
+        w = w > 0.001 ? w : 0.0
         for i = idx
             gs[i] = w
         end
