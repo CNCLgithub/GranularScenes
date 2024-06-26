@@ -1,28 +1,28 @@
 mode: 'scene_vae'
 
 model_params:
-  in_channels: 3
-  latent_dim: 128
+  in_channels: 1
+  latent_dim: 256
 
 path_params:
-  train_path: "/spaths/datasets/ccn_2023_ddp_train_11f_32x32"
-  test_path: "/spaths/datasets/ccn_2023_ddp_test_11f_32x32"
+  train_path: "/spaths/datasets/ddp_train_11f_32x32"
+  test_path: "/spaths/datasets/ddp_test_11f_32x32"
 
 loader_params:
   batch_size: 32
-  num_workers: 4
+  num_workers: 6
 
 exp_params:
   beta: 1.0
   lr: 0.001
   weight_decay: 0.0
-  sched_gamma: 0.9
-  kld_weight: 0.000001
+  sched_gamma: 0.95
+  kld_weight: 0.0001
 
 manual_seed: 1265
 
 trainer_params:
-  max_epochs: 10
+  max_epochs: 15
 
 logging_params:
   save_dir: "/spaths/checkpoints"

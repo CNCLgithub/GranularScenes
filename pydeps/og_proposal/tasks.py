@@ -43,14 +43,14 @@ class SceneEmbedding(pl.LightningModule):
         return {'loss': loss, 'rec_loss':recons_loss, 'kld_loss':kld_loss}
 
     def training_step(self, batch, batch_idx):
-        x = batch[0]
+        x = batch[0][:, 0:1, :, :]
         mu, log_var, y = self.forward(x)
         l = self.loss_function(y, x, mu, log_var)
         self.log_dict(l)
         return l['loss']
 
     def validation_step(self, batch, batch_idx):
-        x = batch[0]
+        x = batch[0][:, 0:1, :, :]
         mu, log_var, y = self.forward(x)
         l = self.loss_function(y, x, mu, log_var)
         vutils.save_image(x.data,
@@ -59,6 +59,7 @@ class SceneEmbedding(pl.LightningModule):
                                        f"recons_{self.logger.name}_epoch_{self.current_epoch}_gt.png"),
                           normalize=True,
                           nrow=12)
+        print(y.shape)
         vutils.save_image(y.data,
                           os.path.join(self.logger.log_dir ,
                                        "reconstructions",
@@ -123,13 +124,13 @@ class OGDecoder(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, og = batch
-        pred_og = self.forward(x)
+        pred_og = self.forward(x[:, 0, :, :])
         train_loss = self.loss_function(pred_og, og)
         return train_loss
 
     def validation_step(self, batch, batch_idx):
         x, og = batch
-        pred_og = self.forward(x)
+        pred_og = self.forward(x[:, 0, :, :])
         val_loss = self.loss_function(pred_og, og)
         self.log('val_loss', val_loss)
         # og_pred_img = rotate(resize(pred_og.unsqueeze(1), 256), 90).data

@@ -99,9 +99,9 @@ function kernel_move!(chain::AMHChain)
     for j = 1:rw_budget
         _t, alpha = rw_move(t, node)
         rw_block_inc!(aux, protocol, _t, node, alpha)
-        # println("RW weight: $(alpha)")
-        # compare_latents(t, _t, node)
         if log(rand()) < alpha # accept?
+            # println("RW weight: $(alpha)")
+            # compare_latents(t, _t, node)
             rw_block_accept!(aux, protocol, _t, node)
             t = _t
         end

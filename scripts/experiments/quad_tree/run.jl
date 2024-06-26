@@ -51,20 +51,24 @@ function parse_commandline(c)
         arg_type = Int64
         required = false
 
+        "--attention", "-a"
+        help = "Attention module"
+        action = :store_true
+
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 1
+        default = 2
 
         "door"
         help = "door"
         arg_type = Int64
-        default = 1
+        default = 2
 
         "chain"
         help = "The number of chains to run"
         arg_type = Int
-        default = 1
+        default = 5
 
     end
 
@@ -98,7 +102,14 @@ function main(c=ARGS)
 
     println("Running inference on scene $(scene)")
 
+
+    args["restart"] = true
+    args["attention"] = false
+    # args["attention"] = true
     out_path = "/spaths/experiments/$(dataset)/$(scene)_$(door)"
+    if args["attention"]
+        out_path *= "_wattention"
+    end
 
     println("Saving results to: $(out_path)")
 
@@ -112,17 +123,14 @@ function main(c=ARGS)
     # Load estimator - Adaptive MCMC
     model_params = first(query.args)
     # ddp_params = DataDrivenState(;config_path = args["ddp"],
-    #                              var = 0.0125)
+    #                              var = 0.001)
     gt_img = GranularScenes.render(model_params.renderer, room)
 
+    protocol = args["attention"] ? AdaptiveComputation() : UniformProtocol()
     proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
                       # ddp = generate_cm_from_ddp,
                       # ddp_args = (ddp_params, gt_img, model_params, 3),
-                      # no attention
-                      # protocol = UniformProtocol(),
-                      #
-                      # adaptive computation
-                      protocol = AdaptiveComputation(),
+                      protocol = protocol
                       )
 
     println("Loaded configuration...")
@@ -141,55 +149,28 @@ function main(c=ARGS)
     for c = 1:args["chain"]
         # Random.seed!(c)
         out = joinpath(out_path, "$(c).jld2")
-
-        if isfile(out) && args["restart"]
-            println("chain $c restarting")
-            rm(out)
-        end
         complete = false
         if isfile(out)
-            corrupted = true
-            jldopen(out, "r") do file
-                # if it doesnt have this key
-                # or it didnt finish steps, restart
-                if haskey(file, "current_idx")
-                    n_steps = file["current_idx"]
-                    if n_steps == proc.samples
-                        println("Chain $(c) already completed")
-                        corrupted = false
-                        complete = true
-                    else
-                        println("Chain $(c) corrupted. Restarting...")
-                    end
-                end
+            println("Record found for chain: $(c)")
+            if args["restart"]
+                println("restarting")
+                rm(out)
+            else
+                println("skipping")
+                complete = true
             end
-            corrupted && rm(out)
         end
-        if !complete
-            println("starting chain $c")
-            nsteps = proc.samples
-            dlog = JLD2Logger(10, out)
-            chain = run_chain(proc, query, nsteps, dlog)
-            qt = get_retval(chain.state)
-            img = GranularScenes.render(model_params.renderer, qt)
-            save_img_array(img, "$(out_path)/$(c)_img_mu.png")
-            println("Chain $(c) complete")
-        end
+        println("Starting chain $c")
+        nsteps = proc.samples
+        dlog = JLD2Logger(50, out)
+        chain = run_chain(proc, query, nsteps, dlog)
+        qt = get_retval(chain.state)
+        img = GranularScenes.render(model_params.renderer, qt)
+        save_img_array(img, "$(out_path)/$(c)_img_mu.png")
+        println("Chain $(c) complete")
     end
 
     return nothing
 end
-
-
-
-# function outer()
-#     args = Dict("scene" => 8)
-#     # args = parse_outer()
-#     i = args["scene"]
-#     # scene | door | chain | attention
-#     cmd = ["$(i)","1", "1", "A"]
-#     # cmd = ["--restart", "$(i)", "1", "1", "A"]
-#     main(cmd);
-# end
 
 main();

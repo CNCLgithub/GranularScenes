@@ -73,10 +73,10 @@ end
 
 function main()
     # Parameters
-    # name = "ccn_2023_ddp_train_11f_32x32"
+    # name = "ddp_train_11f_32x32"
     # n = 5000
-    name = "ccn_2023_ddp_test_11f_32x32"
-    n = 16
+    # name = "ddp_test_11f_32x32"
+    # n = 16
 
     hn = Int(n // 2)
     room_dims = (16., 16.)

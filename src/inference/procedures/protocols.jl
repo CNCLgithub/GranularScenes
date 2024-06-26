@@ -16,6 +16,7 @@ struct UniformProtocol <: AttentionProtocol end
 
 mutable struct UniformAux <: AuxillaryState
     accepts::Int64
+    steps::Int64
     qt_idxs::PriorityQueue{Int64, <:Number, <:Ordering}
 end
 
@@ -28,26 +29,28 @@ function AuxState(p::UniformProtocol, trace)
     # go through the current set of terminal nodes
     # and intialize priority
     for (i, n) = enumerate(qt.leaves)
-        q[n.node.tree_idx] = 10 * area(n.node)
+        q[n.node.tree_idx] = 5 * area(n.node)
     end
-    UniformAux(0, q)
+    UniformAux(0, 0, q)
 end
 
 function select_node(p::UniformProtocol, aux::UniformAux)
-    # denom = sum(collect(values(aux.qt_idxs)))
-    # stop = 0.
+    # ws = softmax(collect(values(aux.qt_idxs)))
+    # stop = 0.0
+    # node = 0
     # nidxs = 0
-    # for (nidx, w) = aux.qt_idxs
-    #     stop += w / denom
+    # for (i, (nidx, w)) = enumerate(aux.qt_idxs)
+    #     stop += exp(ws[i])
     #     if rand() < stop
     #         node = nidx
     #         break
     #     end
     # end
-    # if node === 0
-    #     node, _ = first(aux.qt_idx)
+    # if node === 0 # || isinf(denom)
+    #     node = rand(keys(aux.queue))
     # end
-    node, _ = first(aux.qt_idxs)
+
+    node = rand(keys(aux.qt_idxs))
     println("Uniform Protocol: node $(node)")
     node
 end
@@ -55,12 +58,14 @@ end
 
 function rw_block_init!(aux::UniformAux, p::UniformProtocol, trace)
     aux.accepts = 0
+    aux.steps = 0
     return nothing
 end
 
 function rw_block_inc!(aux::UniformAux, p::UniformProtocol,
                        t::Gen.Trace, node, alpha)
-    aux.qt_idxs[node] -= 1.0
+    aux.qt_idxs[node] += -0.5
+    aux.steps += 1
     return nothing
 end
 
@@ -73,8 +78,9 @@ end
 
 function rw_block_complete!(aux::UniformAux, p::UniformProtocol,
                             t::Gen.Trace, node)
-    steps = aux.accepts
-    # println("Accepted N=$(steps) RW steps on node $(node)")
+    @unpack steps, accepts = aux
+    println("RW acceptance ratio for node $(node): $(accepts  / steps)")
+    aux.steps = 0
     return nothing
 end
 
@@ -135,8 +141,32 @@ end
 accepts(aux::AdaptiveAux) = aux.accepts
 
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
-    node, gr = first(aux.queue)
+
+    ws = collect(values(aux.queue))
+    clamp!(ws, -100, Inf)
+    ws = softmax(ws, 10.0)
+    stop = 0.0
+    node = 0
+    gr = 0.0
+    nidxs = 0
+    for (i, (nidx, w)) = enumerate(aux.queue)
+        stop += exp(ws[i])
+        if rand() < stop
+            node = nidx
+            gr = aux.queue[node]
+            break
+        end
+    end
+    if node === 0 # || isinf(denom)
+        node = rand(keys(aux.queue))
+    end
+
+    # node, gr = first(aux.queue)
+    # if isinf(gr)
+    #     node = rand(keys(aux.queue))
+    # end
     println("Adaptive Protocol: node $(node), relevance $(gr)")
+
     node
 end
 
@@ -154,7 +184,8 @@ function rw_block_inc!(aux::AdaptiveAux, p::AdaptiveComputation,
     obj_t_prime = p.objective(t)
     aux.delta_pi += p.distance(aux.objective, obj_t_prime)
     # ds = alpha < -20 ? 0.0 : exp(alpha)
-    aux.delta_s -= -0.1 #exp(alpha)
+    aux.delta_s += exp(alpha)
+    # aux.delta_s += -0.01
     aux.steps += 1
     return nothing
 end
@@ -164,7 +195,7 @@ function rw_block_accept!(aux::AdaptiveAux,
                           p::AdaptiveComputation,
                           t::Gen.Trace, node)
     aux.accepts += 1
-    aux.delta_s += 0.5
+    aux.delta_s += 0.01
     aux.objective = p.objective(t)
     return nothing
 end
@@ -179,22 +210,20 @@ function rw_block_complete!(aux::AdaptiveAux,
                             t, node)
     # compute goal-relevance
     @unpack delta_pi, delta_s, steps, accepts = aux
-    delta_s = clamp(delta_s, 0., 1.)
+    # delta_s = clamp(delta_s, 0., 1.)
     goal_relevance = log(delta_pi) + log(delta_s) - log(steps)
+    # goal_relevance = log(delta_pi) + delta_s - log(steps)
 
     # update aux state
-    qt = get_retval(t)
-    prod_node = traverse_qt(qt, node).node
-    sidx = node_to_idx(prod_node, max_leaves(qt))
-    for i = sidx
-        aux.sensitivities[i] = goal_relevance
-    end
+    # qt = get_retval(t)
+    # prod_node = traverse_qt(qt, node).node
+    # sidx = node_to_idx(prod_node, max_leaves(qt))
+    # for i = sidx
+    #     aux.sensitivities[i] = goal_relevance
+    # end
     aux.queue[node] = goal_relevance
     accept_ratio = accepts / steps
-    # println("\t delta pi: $(delta_pi)")
-    # println("\t delta S: $(delta_s)")
-    # println("\t goal relevance: $(goal_relevance)")
-    println("\t RW acceptance ratio: $(accept_ratio)")
+    println("\t $(delta_pi) * $(delta_s) | AR=$(accept_ratio)")
     return nothing
 end
 
@@ -232,7 +261,7 @@ function init_queue(tr::Gen.Trace)
 end
 
 function update_queue!(queue, node::Int64, move::Split)
-    prev_val = queue[node] * 0.25
+    prev_val = queue[node] + log(0.25)
     # copying parent's (node) value to children
     for i = 1:4
         cid = Gen.get_child(node, i, 4)
@@ -245,10 +274,10 @@ end
 function update_queue!(queue, node::Int64, move::Merge)
     # merge to parent, averaging siblings relevance
     parent = Gen.get_parent(node, 4)
-    prev_val = 0
+    prev_val = -Inf
     for i = 1:4
         cid = Gen.get_child(parent, i, 4)
-        prev_val += queue[cid]
+        prev_val = logsumexp(prev_val, queue[cid])
         delete!(queue, cid)
     end
     queue[parent] = prev_val # * 0.25

@@ -10,8 +10,8 @@ class VAE(nn.Module):
     num_iter = 0 # Global static variable to keep track of iterations
 
     def __init__(self,
-                 in_channels: int,
-                 latent_dim: int,
+                 in_channels: int = 3,
+                 latent_dim: int = 128,
                  hidden_dims: List = None,
                  **kwargs) -> None:
         super(VAE, self).__init__()
@@ -26,16 +26,17 @@ class VAE(nn.Module):
             Resize(size = (256, 256))
         )
         # Build Encoder
+        ic = in_channels
         for h_dim in hidden_dims:
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels=h_dim,
+                    nn.Conv2d(ic, out_channels=h_dim,
                               kernel_size= 4, stride= 2, padding  = 1),
                     # PrintLayer(),
                     nn.BatchNorm2d(h_dim),
                     nn.LeakyReLU())
             )
-            in_channels = h_dim
+            ic = h_dim
 
         self.encoder = nn.Sequential(*modules)
         self.fc_mu = nn.Linear(hidden_dims[-1] * 16, latent_dim)
@@ -76,7 +77,7 @@ class VAE(nn.Module):
             # PrintLayer(),
             nn.BatchNorm2d(hidden_dims[-1]),
             nn.LeakyReLU(),
-            nn.Conv2d(hidden_dims[-1], out_channels= 3,
+            nn.Conv2d(hidden_dims[-1], out_channels= in_channels,
                       kernel_size= 3, padding= 1),
             # PrintLayer(),
             nn.ReLU(),

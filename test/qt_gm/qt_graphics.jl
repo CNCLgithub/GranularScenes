@@ -75,13 +75,13 @@ function test_render()
 
 
     println("Scene 1")
-    GranularScenes.render(scene, room1)
-    # img = GranularScenes.render(scene, room1)
-    # GranularScenes.save_img_array(img, "/spaths/tests/scene1.png")
+    # GranularScenes.render(scene, room1)
+    img = GranularScenes.render(scene, room1)
+    GranularScenes.save_img_array(img, "/spaths/tests/scene1.png")
 
-    # println("Scene 2")
-    # img = GranularScenes.render(scene, room2)
-    # GranularScenes.save_img_array(img, "/spaths/tests/scene2.png")
+    println("Scene 2")
+    img = GranularScenes.render(scene, room2)
+    GranularScenes.save_img_array(img, "/spaths/tests/scene2.png")
 
     return nothing
 end

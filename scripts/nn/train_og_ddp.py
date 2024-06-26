@@ -38,6 +38,7 @@ def main():
 
     if config['mode'] == 'scene_vae':
         arch = VAE(**config['model_params'])
+        print(config)
         task = SceneEmbedding(arch,  **config['exp_params'])
         loader = ogvae_loader
     elif config['mode'] == 'og_decoder':

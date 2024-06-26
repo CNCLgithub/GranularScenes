@@ -337,13 +337,11 @@ class Renderer:
                var: float) -> float:
         result = 0.
         for u, v in self._rendered_image:
-            for c in ti.static(range(3)):
-                # ls = 0.
-                # if self._rendered_image[u, v][c] > 0.01 and img[u,v,c] > 0.01:
-                z = (img[u, v, c] - self._rendered_image[u, v][c]) / ti.log(var)
-                zsqr = z * z
-                ls = -1 * (zsqr + ti.log(2*np.pi))/2 - ti.log(var)
-                result += ls
+            # for c in ti.static(range(3)):
+            z = (img[u, v, 0] - self._rendered_image[u, v][0]) / var
+            zsqr = z * z
+            ls = -1 * (zsqr + ti.log(2*np.pi))/2 - ti.log(var)
+            result += ls
         return result
 
     @ti.kernel

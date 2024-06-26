@@ -113,13 +113,13 @@ end
 # end
 
 
-function softmax(x::Array{Float64}; t::Float64 = 1.0)
+function softmax(x::Array{Float64}, t::Float64 = 1.0)
     out = similar(x)
-    softmax!(out, x; t = t)
+    softmax!(out, x, t)
     return out
 end
 
-function softmax!(out::Array{Float64}, x::Array{Float64}; t::Float64 = 1.0)
+function softmax!(out::Array{Float64}, x::Array{Float64}, t::Float64 = 1.0)
     nx = length(x)
     maxx = maximum(x)
     sxs = 0.0
@@ -155,7 +155,7 @@ end
 
 
 function add(r::GridRoom, f)
-    g = Rooms.PathGraph(grid(steps(r)))
+    g = Rooms.PathGraph(grid(Rooms.steps(r)))
     d = deepcopy(r.data)
     for idx = f
         d[idx] = obstacle_tile
