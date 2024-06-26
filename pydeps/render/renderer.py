@@ -175,7 +175,7 @@ class Renderer:
 
         normal = ti.Vector([0.0, 0.0, 0.0])
         hit_distance = inf
-        weight = 1.0
+        weight = 0.0
 
         if inter:
             near = max(0, near)
@@ -232,7 +232,7 @@ class Renderer:
         # check if floor is closer
         ray_march_dist = self.ray_march(pos, d)
         if hit_distance < eps or ray_march_dist < hit_distance:
-        # if ray_march_dist < hit_distance:
+            # if ray_march_dist < hit_distance:
             hit_distance = ray_march_dist
             weight = 1.0 # don't go further
             normal = self.sdf_normal(pos + d * hit_distance)
@@ -294,13 +294,16 @@ class Renderer:
                 dist, w, normal = self.next_hit(new_pos, cdir)
                 acc_dist += dist
                 depth += mass * w * acc_dist
-                # if u == 34 and v == 5:
-                #     print(f'{steps=} {pos=} {new_pos=} {mass=} {dist=} {w=} {acc_dist=} {depth=} {cdir=}')
+                if u == 34 and v == 25:
+                    print(f'{steps=} {pos=} {new_pos=} {mass=} {dist=} {w=} {acc_dist=} {depth=} {cdir=}')
                 mass *= (1.0 - w)
                 steps += 1
 
             # top off with final hit
             depth += mass * acc_dist
+
+            if u == 34 and v == 15:
+                print(f'Final pos: {new_pos + dist * cdir}')
 
             self.depth_buffer[u, v] = depth
 

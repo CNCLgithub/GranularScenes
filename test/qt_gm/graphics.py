@@ -19,7 +19,7 @@ obstacles = np.array([
     [0,0,1,0,0,0,0,1,0,0,0,1,0,0,0,0],
     [0,0,1,0,0,0,0,1,0,0,0,1,0,0,0,0],
     [0,0,1,0,0,0,0,1,0,0,0,1,0,0,0,0],
-    [0,0,1,1,1,1,0,0,.1,.3,.5,0,0,0,0,0],
+    [0,0,1,1,1,1,0,0,1,0.5,1,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -61,56 +61,9 @@ scene.set_lights(32)
 scene.set_obstacles(obstacles)
 scene.renderer.set_look_at(-0.3, -0.2, -0.016)
 scene.renderer.set_camera_pos(1.78, -0.03, -0.015)
-# scene.finish()
 
-
-# for _ in range(100):
-#     t = time.time()
-#     scene.reset_voxels()
-#     elapsed = time.time() - t
-#     print(f'Reset time: {elapsed}')
-#     t = time.time()
-#     # scene.set_obstacles(obstacles)
-#     write_obs(scene, obs_x, obs_y)
-#     elapsed = time.time() - t
-#     print(f'Write time: {elapsed}')
-#     t = time.time()
-#     # scene.set_obstacles(obstacles)
-#     write_obs(scene, obs_x, obs_y)
-#     elapsed = time.time() - t
-#     print(f'Write time: {elapsed}')
-#     t = time.time()
-#     scene.render_scene(15)
-#     elapsed = time.time() - t
-#     print(f'Rendering time: {elapsed}')
-
-# t = time.time()
-# scene.reset_voxels()
-# elapsed = time.time() - t
-# print(f'Reset time: {elapsed}')
-# t = time.time()
-# scene.set_obstacles(obstacles)
-# elapsed = time.time() - t
-# print(f'Write time: {elapsed}')
-# t = time.time()
-# img = scene.render_scene(15)
-# elapsed = time.time() - t
-# print(f'Rendering time: {elapsed}')
-# scene.save_img(img, dirpath = "test/screenshots/")
-
-spp = 20
 rimg = scene.render_scene().to_numpy()
 # rimg = scene.random(0.1)
 print(type(rimg))
-print(rimg.shape)
+# print(rimg)
 scene.save_img(rimg, dirpath = "test/screenshots/")
-# t = time.time()
-# nsteps = 10
-# logpdf = scene.logpdf(rimg, 0.1)
-
-# for _ in range(nsteps):
-#     logpdf = scene.logpdf(rimg, 0.1)
-#     print(f'Logpdf: {logpdf}')
-
-# elapsed = (time.time() - t) / nsteps
-# print(f'Time per call: {elapsed}')
