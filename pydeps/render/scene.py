@@ -198,8 +198,8 @@ class Scene:
             for j in range(-hn, hn):
                 self.set_voxel(vec3(i, height, j), 1, vec3(1, 1, 1),
                                reset = True)
-                self.set_voxel(vec3(i, -hn, j), 1, vec3(1, 1, 1),
-                               reset = True)
+                # self.set_voxel(vec3(i, -hn, j), 1, vec3(1, 1, 1),
+                #                reset = True)
 
     @ti.kernel
     def set_lights(self, n:int):

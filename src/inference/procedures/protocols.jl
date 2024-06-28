@@ -103,6 +103,21 @@ function sm_block_complete!(aux::UniformAux, p::UniformProtocol,
     return nothing
 end
 
+
+function attention_map(aux::UniformAux, tr::Gen.Trace)
+    qt = get_retval(tr)
+    n = max_leaves(qt)
+    amap = Matrix{Float32}(undef, (n, n))
+    for x in qt.leaves
+        idxs = node_to_idx(x.node, n)
+        v = aux.qt_idxs[x.node.tree_idx]
+        for i = idxs
+            amap[i] = v
+        end
+    end
+    return amap
+end
+
 #################################################################################
 # Adaptive Computation
 #################################################################################
@@ -244,6 +259,19 @@ function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
     return nothing
 end
 
+function attention_map(aux::AdaptiveAux, t::Gen.Trace)
+    qt = get_retval(t)
+    n = max_leaves(qt)
+    amap = Matrix{Float32}(undef, n, n)
+    for x in qt.leaves
+        idxs = node_to_idx(x.node, n)
+        v = aux.queue[x.node.tree_idx]
+        for i = idxs
+            amap[i] = v
+        end
+    end
+    return amap
+end
 
 #################################################################################
 # Helpers

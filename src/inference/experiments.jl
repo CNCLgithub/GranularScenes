@@ -1,67 +1,60 @@
 export run_inference, resume_inference, query_from_params, proc_from_params
 
-function ex_choicemap(c::AMHChain)
-    ex_choicemap(c.state)
-end
-function ex_choicemap(tr::Gen.Trace)
-    s = Gen.complement(select(:viz, :instances))
-    choices = get_choices(tr)
-    get_selected(choices, s)
+function ex_obstacles(c::AMHChain)
+    qt = get_retval(c.state)
+    project_qt(qt)
 end
 
-function ex_projected(c::AMHChain)
-     st = get_retval(c.state)
-     deepcopy(st.qt.projected)
-end
-
-function ex_img_mu(c::AMHChain)
-    st = get_retval(c.state)
-    deepcopy(st.img_mu)
+function ex_img(c::AMHChain)
+    p = first(get_args(c.state))
+    qt = get_retval(c.state)
+    img = @pycall render(p.renderer, qt).to_numpy()::Array{Float32,3}
 end
 
 function ex_granularity(c::AMHChain)
-    st = get_retval(c.state)
-    n = size(st.qt.projected, 1)
-    m = Matrix{Int64}(undef, n, n)
-    for x in st.qt.leaves
-        idx = node_to_idx(x.node, n)
-        m[idx] .= x.node.level
+    qt = get_retval(c.state)
+    n = max_leaves(qt)
+    m = Matrix{UInt8}(undef, n, n)
+    for x in qt.leaves
+        for idx = node_to_idx(x.node, n)
+            m[idx] = x.node.level
+        end
     end
     m
 end
 
 function ex_path(c::AMHChain)
-    params = first(get_args(c.state))
     qt = get_retval(c.state)
+    n = max_leaves(qt)
     path = quad_tree_path(c.state)
-    n = first(params.dims)
     leaves = qt.leaves
-    m = fill(false, (n,n))
+    m = Matrix{Bool}(undef, n, n)
+    fill!(m, false)
     for e in path.edges
         src_node = leaves[src(e)].node
-        idx = node_to_idx(src_node, n)
-        m[idx] .= true
+        for idx = node_to_idx(src_node, n)
+            m[idx] = true
+        end
         dst_node = leaves[dst(e)].node
-        idx = node_to_idx(src_node, n)
-        m[idx] .= true
+        for idx = node_to_idx(dst_node, n)
+            m[idx] = true
+        end
     end
     m
 end
 
 function ex_attention(c::AMHChain)
-    @unpack auxillary = c
-    Dict(:sensitivities => deepcopy(auxillary.sensitivities),
-         :node => deepcopy(auxillary.node))
+    attention_map(c.auxillary, c.state)
 end
 
 function query_from_params(room::GridRoom, path::String; kwargs...)
 
     _lm = Dict{Symbol, Any}(
-        # :projected => ex_projected,
-        # :granularity => ex_granularity,
-        # :path => ex_path,
-        # :img_mu => ex_img_mu,
-        # :attention => ex_attention
+        :attention => ex_attention,
+        :obstacles => ex_obstacles,
+        :granularity => ex_granularity,
+        :path => ex_path,
+        :img => ex_img,
     )
     latent_map = LatentMap(_lm)
 
@@ -80,20 +73,3 @@ function query_from_params(room::GridRoom, path::String; kwargs...)
                                     (gm_params,),
                                     obs)
 end
-
-# function proc_from_params(gt::Room,
-#                           model_params::ModelParams, proc_path::String,
-#                           vae::String, ddp::String; kwargs...)
-
-#     # init ddp
-#     img = image_from_instances([gt], model_params)
-#     ddp_params = DataDrivenState(;vae_weights = vae,
-#                                  ddp_weights = ddp)
-#     all_selection = FunctionalScenes.all_selections_from_model(model_params)
-#     ddp_args = ((ddp_params, img), all_selection)
-
-#     selections = FunctionalScenes.selections(model_params)
-#     proc = FunctionalScenes.load(AttentionMH, selections, proc_path;
-#                                  ddp_args = ddp_args,
-#                                  kwargs...)
-# end

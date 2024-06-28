@@ -23,7 +23,7 @@ obstacles = np.array([
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-], dtype = np.float32).repeat(2, 0).repeat(2, 1)
+], dtype = np.float32)# .repeat(2, 0).repeat(2, 1)
 
 obs_x, obs_y = np.where(obstacles)
 
@@ -50,14 +50,14 @@ walls = np.array([
     [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
     [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
     [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-], dtype = np.int32).repeat(2, 0).repeat(2, 1)
+], dtype = np.int32)#.repeat(2, 0).repeat(2, 1)
 
-scene = vxl_scene(32, (128, 128), window = False)
+scene = vxl_scene(16, (128, 128), window = False)
 
 # scene = vxl_scene(32, (720, 480), window = True)
 scene.set_exterior(walls)
 print(f'{scene.renderer.floor_height[None]=}')
-scene.set_lights(32)
+scene.set_lights(16)
 scene.set_obstacles(obstacles)
 scene.renderer.set_look_at(-0.3, -0.2, -0.016)
 scene.renderer.set_camera_pos(1.78, -0.03, -0.015)

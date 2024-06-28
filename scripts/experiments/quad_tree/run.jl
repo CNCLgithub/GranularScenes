@@ -58,7 +58,7 @@ function parse_commandline(c)
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 2
+        default = 3
 
         "door"
         help = "door"
@@ -87,14 +87,14 @@ function load_base_scene(path::String)
     open(path, "r") do f
         base_s = JSON.parse(f)
     end
+    # base = expand(from_json(GridRoom, base_s), 2)
     base = from_json(GridRoom, base_s)
     clear_wall(base)
 end
 
 function run_model(proc, query, out)
-    nsteps = proc.samples
     dlog = JLD2Logger(50, out)
-    chain = run_chain(proc, query, nsteps, dlog)
+    chain = run_chain(proc, query, proc.samples + 1, dlog)
     qt = get_retval(chain.state)
 end
 
@@ -122,12 +122,10 @@ function main(c=ARGS)
         model_params = first(query.args)
         gt_img = GranularScenes.render(model_params.renderer, room)
         # save the gt image for reference
-        save_img_array(gt_img, "$(out_path)/gt.png")
+        # save_img_array(gt_img, "$(out_path)/gt.png")
 
         # ddp_params = DataDrivenState(;config_path = args["ddp"],
         #                              var = 0.001)
-
-
 
         ac_proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
                         # ddp = generate_cm_from_ddp,
@@ -167,10 +165,10 @@ function main(c=ARGS)
                 println("Starting chain $c")
                 ac_qt = run_model(ac_proc, query, ac_out)
                 un_qt = run_model(un_proc, query, un_out)
-                save_img_array(GranularScenes.render(model_params.renderer, ac_qt),
-                            "$(out_path)/$(c)_ac.png")
-                save_img_array(GranularScenes.render(model_params.renderer, un_qt),
-                            "$(out_path)/$(c)_un.png")
+                # save_img_array(GranularScenes.render(model_params.renderer, ac_qt),
+                #             "$(out_path)/$(c)_ac.png")
+                # save_img_array(GranularScenes.render(model_params.renderer, un_qt),
+                #             "$(out_path)/$(c)_un.png")
             end
             println("Chain $(c) complete")
         end
