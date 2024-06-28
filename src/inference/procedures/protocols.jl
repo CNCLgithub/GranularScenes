@@ -142,30 +142,28 @@ accepts(aux::AdaptiveAux) = aux.accepts
 
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
 
+    ks = collect(keys(aux.queue))
     ws = collect(values(aux.queue))
+
     clamp!(ws, -100, Inf)
-    ws = softmax(ws, 10.0)
+    ws = softmax(ws, 1.0)
     stop = 0.0
     node = 0
     gr = 0.0
-    nidxs = 0
-    for (i, (nidx, w)) = enumerate(aux.queue)
-        stop += exp(ws[i])
-        if rand() < stop
-            node = nidx
-            gr = aux.queue[node]
-            break
-        end
-    end
-    if node === 0 # || isinf(denom)
+    nidx = categorical(ws)
+    node = ks[nidx]
+    gr = aux.queue[node]
+    if bernoulli(0.1)
         node = rand(keys(aux.queue))
+        gr = aux.queue[node]
     end
-
-    # node, gr = first(aux.queue)
-    # if isinf(gr)
-    #     node = rand(keys(aux.queue))
-    # end
     println("Adaptive Protocol: node $(node), relevance $(gr)")
+    # i = 1
+    # for kv = aux.queue
+    #     i > 3 && break
+    #     println("\t $(kv) | $(ws[i])")
+    #     i += 1
+    # end
 
     node
 end
@@ -184,7 +182,8 @@ function rw_block_inc!(aux::AdaptiveAux, p::AdaptiveComputation,
     obj_t_prime = p.objective(t)
     aux.delta_pi += p.distance(aux.objective, obj_t_prime)
     # ds = alpha < -20 ? 0.0 : exp(alpha)
-    aux.delta_s += exp(alpha)
+    aux.delta_s = logsumexp(aux.delta_s, alpha)
+    # aux.delta_s += exp(min(0.0, alpha))
     # aux.delta_s += -0.01
     aux.steps += 1
     return nothing
@@ -195,7 +194,7 @@ function rw_block_accept!(aux::AdaptiveAux,
                           p::AdaptiveComputation,
                           t::Gen.Trace, node)
     aux.accepts += 1
-    aux.delta_s += 0.01
+    # aux.delta_s += 0.01
     aux.objective = p.objective(t)
     return nothing
 end
@@ -210,9 +209,10 @@ function rw_block_complete!(aux::AdaptiveAux,
                             t, node)
     # compute goal-relevance
     @unpack delta_pi, delta_s, steps, accepts = aux
-    # delta_s = clamp(delta_s, 0., 1.)
-    goal_relevance = log(delta_pi) + log(delta_s) - log(steps)
-    # goal_relevance = log(delta_pi) + delta_s - log(steps)
+    delta_pi = log(delta_pi) - log(steps)
+    delta_s = delta_s - log(steps)
+    goal_relevance = delta_pi + delta_s
+    # goal_relevance = log(delta_pi) + log(delta_s) - 2 * log(steps)
 
     # update aux state
     # qt = get_retval(t)
@@ -223,7 +223,7 @@ function rw_block_complete!(aux::AdaptiveAux,
     # end
     aux.queue[node] = goal_relevance
     accept_ratio = accepts / steps
-    println("\t $(delta_pi) * $(delta_s) | AR=$(accept_ratio)")
+    println("\t $(delta_pi) + $(delta_s) | AR=$(accept_ratio)")
     return nothing
 end
 
@@ -255,7 +255,7 @@ function init_queue(tr::Gen.Trace)
     # go through the current set of terminal nodes
     # and intialize priority
     for n = qt.leaves
-        q[n.node.tree_idx] = area(n.node)
+        q[n.node.tree_idx] = log(area(n.node))
     end
     return q
 end

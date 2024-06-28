@@ -5,7 +5,7 @@ import numpy as np
 from .math_utils import (eps, inf, out_dir, ray_aabb_intersection,
                          round_idx)
 
-MAX_RAY_DEPTH = 5
+MAX_RAY_DEPTH = 10
 use_directional_light = True
 
 DIS_LIMIT = 200.0
@@ -173,27 +173,39 @@ class Renderer:
         inter, near, far = ray_aabb_intersection(bbox_min, bbox_max, eye_pos,
                                                  d)
 
-        normal = ti.Vector([0.0, 0.0, 0.0])
+        # print(f'{inter=} {near=} {far=} {self.voxel_inv_dx=}')
+        # print(f'{rinv=} {rsign=} {self.bbox=}')
+
+        hit_pos = ti.Vector([0.0, 0.0, 0.0])
         hit_distance = inf
         weight = 0.0
 
         if inter:
-            near = max(0, near)
+            # near = near if near > 0 else far
+            near = max(near, 0)
             pos = eye_pos + d * (near + 5 * eps)
             o = self.voxel_inv_dx * pos
             ipos = int(ti.floor(o))
             dis = (ipos - o + 0.5 + rsign * 0.5) * rinv
 
+
+            # print(f'eyepos={int(ti.floor(self.voxel_inv_dx * eye_pos))} {pos=} {o=} {ipos=}')
+
+            step = 0
             running = 1
             while running:
 
                 # voxel weight
                 w = clamp(self.query_density(ipos), 0.0, 1.0)
 
-                if w > eps: # return distance of voxel surface
+                # print(f'{step=} {ipos=}, {w=}')
+
+                if step > 0 and w > eps: # return distance of voxel surface
                     mini = (ipos - o + ti.Vector([0.5, 0.5, 0.5]) -
                             rsign * 0.5) * rinv
                     hit_distance = mini.max() * self.voxel_dx + near
+                    hit_pos = eye_pos + (hit_distance + 1e-3) * d
+                    # print(f'{hit_pos=}')
                     weight = w
                     running = 0
                 else: # no surface reached - continue ray
@@ -206,7 +218,7 @@ class Renderer:
                         mm[2] = 1
                     dis += mm * rsign * rinv
                     ipos += mm * rsign
-                    normal = -mm * rsign
+                    step +=1
 
                 # outside range of voxels - exit
                 if not self.inside_particle_grid(ipos):
@@ -214,7 +226,8 @@ class Renderer:
                     # weight = 1.0
                     running = 0
 
-        return hit_distance, weight, normal
+        # print(f'{hit_distance=}')
+        return hit_distance, weight, hit_pos
 
     @ti.func
     def inside_particle_grid(self, ipos):
@@ -231,7 +244,7 @@ class Renderer:
 
         # check if floor is closer
         ray_march_dist = self.ray_march(pos, d)
-        if hit_distance < eps or ray_march_dist < hit_distance:
+        if ray_march_dist < hit_distance:
             # if ray_march_dist < hit_distance:
             hit_distance = ray_march_dist
             weight = 1.0 # don't go further
@@ -274,6 +287,8 @@ class Renderer:
 
     @ti.kernel
     def render(self):
+        # u = 42
+        # v = 28
         ti.loop_config(block_dim=256)
         for u, v in self.depth_buffer:
             cdir = self.get_cast_dir(u, v)
@@ -284,26 +299,28 @@ class Renderer:
             depth = 0.0
             acc_dist = 0.0
             mass = 1.0
-            dist = -eps
+            dist = 0.0 #-eps
             w = 0.0
             steps = 0
 
             # Tracing begin
             while steps < MAX_RAY_DEPTH and mass > eps and acc_dist < DIS_LIMIT:
-                new_pos = new_pos + (dist + eps) * cdir
-                dist, w, normal = self.next_hit(new_pos, cdir)
+                # new_pos = pos + (acc_dist + 1e-3) * cdir
+                # print(f'{new_pos=}')
+                dist, w, new_pos = self.next_hit(new_pos, cdir)
                 acc_dist += dist
                 depth += mass * w * acc_dist
-                if u == 34 and v == 25:
-                    print(f'{steps=} {pos=} {new_pos=} {mass=} {dist=} {w=} {acc_dist=} {depth=} {cdir=}')
+                # if w == 0.5:
+                #     print(f'{u=} {v=}')
+                # if u == 34 and v == 25:
+                # print(f'{steps=} {pos=} {new_pos=} {mass=} {dist=} {w=} {acc_dist=} {depth=} {cdir=}')
                 mass *= (1.0 - w)
                 steps += 1
 
             # top off with final hit
             depth += mass * acc_dist
 
-            if u == 34 and v == 15:
-                print(f'Final pos: {new_pos + dist * cdir}')
+            # print(f'Final pos: {new_pos + dist * cdir}')
 
             self.depth_buffer[u, v] = depth
 
@@ -350,9 +367,17 @@ class Renderer:
     @ti.kernel
     def _render_to_image(self):
         ti.loop_config(block_dim=256)
+        dmin = 1.3
+        dmax = 2.3
+        # for i, j in self.depth_buffer:
+        #     v = self.depth_buffer[i, j]
+        #     ti.atomic_min(dmin, v)
+        #     ti.atomic_max(dmax, v)
+        # print(f'{dmin=} {dmax=}')
         for i, j in self.depth_buffer:
             # v = 0.3 * ti.sqrt(self.depth_buffer[i, j])
-            v = 0.25 * self.depth_buffer[i, j]
+            # v = 0.25 * self.depth_buffer[i, j]\
+            v = max(0.0, (self.depth_buffer[i, j] - dmin) / dmax)
             for c in ti.static(range(3)):
                 self._rendered_image[i, j][c] = v
 

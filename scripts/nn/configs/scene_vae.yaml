@@ -1,8 +1,8 @@
 mode: 'scene_vae'
 
 model_params:
-  in_channels: 1
-  latent_dim: 256
+  in_channels: 3
+  latent_dim: 32
 
 path_params:
   train_path: "/spaths/datasets/ddp_train_11f_32x32"
@@ -10,14 +10,14 @@ path_params:
 
 loader_params:
   batch_size: 32
-  num_workers: 6
+  num_workers: 4
 
 exp_params:
   beta: 1.0
-  lr: 0.001
+  lr: 0.00005
   weight_decay: 0.0
-  sched_gamma: 0.95
-  kld_weight: 0.0001
+  sched_gamma: 0.98
+  kld_weight: 0.000001
 
 manual_seed: 1265
 

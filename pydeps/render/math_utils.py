@@ -35,6 +35,8 @@ def ray_aabb_intersection(box_min, box_max, o, d):
     near_int = -inf
     far_int = inf
 
+    # print(f'{box_min=}, {box_max=}, {o=}, {d=}')
+
     for i in ti.static(range(3)):
         if d[i] == 0:
             if o[i] < box_min[i] or o[i] > box_max[i]:
@@ -46,8 +48,12 @@ def ray_aabb_intersection(box_min, box_max, o, d):
             new_far_int = ti.max(i1, i2)
             new_near_int = ti.min(i1, i2)
 
+            # print(f'{i=}: {new_far_int=}, {new_near_int=}')
+
             far_int = ti.min(new_far_int, far_int)
             near_int = ti.max(new_near_int, near_int)
+
+            # print(f'\t {far_int=}, {near_int=}')
 
     if near_int > far_int:
         intersect = 0

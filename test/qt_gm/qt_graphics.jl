@@ -8,11 +8,11 @@ using GranularScenes
 using ImageCore: colorview
 using Colors: RGB
 
-dataset = "ccn_2023_exp"
+dataset = "path_block_2024-03-14"
 
 function load_room(idx::Int)
 
-    base_path = "test/datasets/$(dataset)/scenes"
+    base_path = "/spaths/datasets/$(dataset)/scenes"
     path = joinpath(base_path, "$(idx)_1.json")
     local base_s
     open(path, "r") do f

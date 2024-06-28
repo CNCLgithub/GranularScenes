@@ -97,10 +97,11 @@ function main(c=ARGS)
     # Load estimator - Adaptive MCMC
     model_params = first(query.args)
     # ddp_params = DataDrivenState(;config_path = args["ddp"],
-    #                              var = 0.5)
+    #                              var = 0.15)
     gt_img = GranularScenes.render(model_params.renderer, room)
 
     proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
+                      samples = 300,
                       # ddp = generate_cm_from_ddp,
                       # ddp_args = (ddp_params, gt_img, model_params, 3),
                       # start with no ddp
