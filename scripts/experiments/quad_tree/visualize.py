@@ -47,61 +47,85 @@ def main():
 
     exp_path = f'/spaths/experiments/{EXPNAME}'
 
-    for scene in [1,2,3]:
-        for door in [1,2]:
-            data_path = f'{exp_path}/{scene}_{door}_ac_aggregated.npz'
-            data = np.load(data_path)
+    for version in [1,2]:
+        for scene in [1,2,3]:
+            for door in [1,2]:
 
-            geo = np.mean(data['geo'], axis = (0,1))
-            geo_hm =  go.Heatmap(z = geo.T, coloraxis="coloraxis1")
-            geo_fig.update_yaxes(title_text=f"Scene: {scene}", row=scene, col=1)
-            geo_fig.add_trace(geo_hm, row = scene, col = door)
+                if version == 1:
+                    data_path = f'{exp_path}/{scene}_{door}_ac_aggregated.npz'
+                else:
+                    data_path = f'{exp_path}/{scene}_{door}_deleted_ac_aggregated.npz'
 
+                data = np.load(data_path)
 
-            att = np.mean(np.clip(data['att'], -20., 0.), axis = (0,1))
-            att_hm =  go.Heatmap(z = att.T, coloraxis="coloraxis1")
-            att_fig.update_yaxes(title_text=f"Scene: {scene}", row=scene, col=1)
-            att_fig.add_trace(att_hm, row = scene, col = door)
-
-            pmat = np.mean(data['pmat'], axis = (0,1))
-            pmat_hm =  go.Heatmap(z = pmat.T, coloraxis="coloraxis1")
-            pmat_fig.update_yaxes(title_text=f"Scene: {scene}", row=scene, col=1)
-            pmat_fig.add_trace(pmat_hm, row = scene, col = door)
-
-            img = np.mean(data['img'], axis = (0, 3))
-            img = np.flip(img, 0)
-            img = np.rot90(img)
-            img = np.clip(img * 255, 0, 255).astype(np.uint8)
-            Image.fromarray(img).save(f'{exp_path}/ac_{scene}_{door}_img.png')
+                geo = np.mean(data['geo'], axis = (0,1))
+                geo_hm =  go.Heatmap(z = geo.T, coloraxis="coloraxis1")
+                geo_fig.update_yaxes(title_text=f"Scene: {scene}", row=scene, col=1)
+                geo_fig.add_trace(geo_hm, row = scene, col = door)
 
 
-    geo_fig.update_layout(
-        height = SUBPLOT_WIDTH * 3,
-        width = SUBPLOT_WIDTH * 2 + 15,
-        coloraxis1=dict(colorscale='blues'),
-        showlegend=False
-    )
-    geo_fig.write_html(f'{exp_path}/ac_geo.html')
-    geo_fig.write_image(f'{exp_path}/ac_geo.png')
+                att = np.mean(np.clip(data['att'], -20., 0.), axis = (0,1))
+                att_hm =  go.Heatmap(z = att.T, coloraxis="coloraxis1")
+                att_fig.update_yaxes(title_text=f"Scene: {scene}", row=scene, col=1)
+                att_fig.add_trace(att_hm, row = scene, col = door)
+
+                pmat = np.mean(data['pmat'], axis = (0,1))
+                pmat_hm =  go.Heatmap(z = pmat.T, coloraxis="coloraxis1")
+                pmat_fig.update_yaxes(title_text=f"Scene: {scene}", row=scene, col=1)
+                pmat_fig.add_trace(pmat_hm, row = scene, col = door)
+
+                img = np.mean(data['img'], axis = (0, 3))
+                img = np.flip(img, 0)
+                img = np.rot90(img)
+                img = np.clip(img * 255, 0, 255).astype(np.uint8)
+
+                if version == 1:
+                    Image.fromarray(img).save(f'{exp_path}/ac_{scene}_{door}_img.png')
+                else:
+                    Image.fromarray(img).save(f'{exp_path}/ac_{scene}_{door}_deleted_img.png')
 
 
-    att_fig.update_layout(
-        height = SUBPLOT_WIDTH * 3,
-        width = SUBPLOT_WIDTH * 2 + 15,
-        coloraxis1=dict(colorscale='reds'),
-        showlegend=False
-    )
-    att_fig.write_html(f'{exp_path}/ac_att.html')
-    att_fig.write_image(f'{exp_path}/ac_att.png')
+        geo_fig.update_layout(
+            height = SUBPLOT_WIDTH * 3,
+            width = SUBPLOT_WIDTH * 2 + 15,
+            coloraxis1=dict(colorscale='blues'),
+            showlegend=False
+        )
 
-    pmat_fig.update_layout(
-        height = SUBPLOT_WIDTH * 3,
-        width = SUBPLOT_WIDTH * 2 + 15,
-        coloraxis1=dict(colorscale='greens'),
-        showlegend=False
-    )
-    pmat_fig.write_html(f'{exp_path}/ac_path.html')
-    pmat_fig.write_image(f'{exp_path}/ac_path.png')
+        if version == 1:
+            geo_fig.write_html(f'{exp_path}/ac_geo.html')
+            geo_fig.write_image(f'{exp_path}/ac_geo.png')
+        else:
+            geo_fig.write_html(f'{exp_path}/deleted_ac_geo.html')
+            geo_fig.write_image(f'{exp_path}/deleted_ac_geo.png')
+
+
+        att_fig.update_layout(
+            height = SUBPLOT_WIDTH * 3,
+            width = SUBPLOT_WIDTH * 2 + 15,
+            coloraxis1=dict(colorscale='reds'),
+            showlegend=False
+        )
+        if version == 1:
+            att_fig.write_html(f'{exp_path}/ac_att.html')
+            att_fig.write_image(f'{exp_path}/ac_att.png')
+        else:
+            att_fig.write_html(f'{exp_path}/deleted_ac_att.html')
+            att_fig.write_image(f'{exp_path}/deleted_ac_att.png')
+
+        pmat_fig.update_layout(
+            height = SUBPLOT_WIDTH * 3,
+            width = SUBPLOT_WIDTH * 2 + 15,
+            coloraxis1=dict(colorscale='greens'),
+            showlegend=False
+        )
+
+        if version == 1:
+            pmat_fig.write_html(f'{exp_path}/ac_pmat.html')
+            pmat_fig.write_image(f'{exp_path}/ac_pmat.png')
+        else:
+            pmat_fig.write_html(f'{exp_path}/deleted_ac_pmat.html')
+            pmat_fig.write_image(f'{exp_path}/deleted_ac_pmat.png')
 
 if __name__ == '__main__':
     main()

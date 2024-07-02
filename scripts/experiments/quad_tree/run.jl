@@ -4,7 +4,7 @@ using JSON
 using JLD2
 using FileIO
 using ArgParse
-using DataFrames
+# using DataFrames
 using Gen_Compose
 using Rooms
 using GranularScenes
@@ -51,24 +51,15 @@ function parse_commandline(c)
         arg_type = Int64
         required = false
 
-        "--attention", "-a"
-        help = "Attention module"
-        action = :store_true
-
         "scene"
         help = "Which scene to run"
         arg_type = Int64
         default = 3
 
-        "door"
-        help = "door"
-        arg_type = Int64
-        default = 2
-
         "chain"
         help = "The number of chains to run"
         arg_type = Int
-        default = 3
+        default = 20
 
     end
 
@@ -92,6 +83,12 @@ function load_base_scene(path::String)
     clear_wall(base)
 end
 
+function block_tile(r::GridRoom, tidx::Int)
+    d = data(r)
+    d[tidx] = obstacle_tile
+    GridRoom(r, d)
+end
+
 function run_model(proc, query, out)
     dlog = JLD2Logger(50, out)
     chain = run_chain(proc, query, proc.samples + 1, dlog)
@@ -105,14 +102,23 @@ function main(c=ARGS)
     scene = args["scene"]
 
     println("Running inference on scene $(scene)")
-    args["restart"] = true
+    # args["restart"] = true
 
-    for door = [1, 2]
+    manifest = CSV.File(base_path * ".csv")
+    del_tile = manifest[:tidx][scene]
+
+    for door = [1, 2], version = [1,2]
         out_path = "/spaths/experiments/$(dataset)/$(scene)_$(door)"
-        println("Saving results to: $(out_path)")
 
         base_p = joinpath(base_path, "$(scene)_$(door).json")
         room = load_base_scene(base_p)
+        if version == 2
+            room = block_tile(room, del_tile)
+            out_path *= "_blocked"
+        end
+
+
+        println("Saving results to: $(out_path)")
 
         # Load query (identifies the estimand)
         query = query_from_params(room, args["gm"];

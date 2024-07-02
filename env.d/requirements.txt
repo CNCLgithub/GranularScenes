@@ -6,6 +6,7 @@ numba
 opencv-python-headless
 ninja
 plotly
+kaleido
 torch
 torchvision
 fvcore

@@ -3,20 +3,21 @@
 """ Submits sbatch array for rendering stimuli """
 import os
 import argparse
-import pandas as pd
+# import pandas as pd
 from slurmpy import sbatch
 
 script = 'bash {0!s}/env.d/run.sh ' + \
         '/project/scripts/experiments/quad_tree/run.sh'
 
-def att_tasks(args, df):
+def att_tasks(args):
     tasks = []
-    for (ri, r) in df.iterrows():
+    for scene in [1,2,3]:
+    # for scene in [3]:
         # base scene
-        tasks.append((r['id'], r['door'], args.chains, 'A'))
-        # shifted scene
-        tasks.append((f"--move {r.move}", f"--furniture {r.furniture}",
-                        r['id'], r['door'], args.chains, 'A'))
+        tasks.append((scene, args.chains))
+        # # shifted scene
+        # tasks.append((f"--move {r.move}", f"--furniture {r.furniture}",
+        #                 r['id'], r['door'], args.chains, 'A'))
     return (tasks, [], [])
     
 def main():
@@ -28,18 +29,18 @@ def main():
     parser.add_argument('--scenes', type = str,
                         default = 'ccn_2023_exp',
                         help = 'number of scenes') ,
-    parser.add_argument('--chains', type = int, default = 5,
+    parser.add_argument('--chains', type = int, default = 20,
                         help = 'number of chains')
-    parser.add_argument('--duration', type = int, default = 120,
+    parser.add_argument('--duration', type = int, default = 30,
                         help = 'job duration (min)')
 
 
 
     args = parser.parse_args()
-    df_path = f"/spaths/datasets/{args.scenes}/scenes.csv"
-    df = pd.read_csv(df_path)
+    # df_path = f"/spaths/datasets/{args.scenes}/scenes.csv"
+    # df = pd.read_csv(df_path)
 
-    tasks, kwargs, extras = att_tasks(args, df)
+    tasks, kwargs, extras = att_tasks(args)
     # run one job first to test and profile
     # tasks = tasks[:args.chains]
 
@@ -49,13 +50,12 @@ def main():
         'cpus-per-task' : '1',
         'mem-per-cpu' : '8GB',
         'time' : '{0:d}'.format(args.duration),
-        'partition' : 'psych_scavenge',
+        'partition' : 'gpu',
         'gres' : 'gpu:1',
         'requeue' : None,
-        'job-name' : 'rooms-ccn',
+        'job-name' : 'rooms',
         'chdir' : os.getcwd(),
         'output' : f"{slurm_out}/%A_%a.out",
-        'exclude' : 'r811u30n01' # ran into CUDA error
     }
     func = script.format(os.getcwd())
     batch = sbatch.Batch(interpreter, func, tasks,

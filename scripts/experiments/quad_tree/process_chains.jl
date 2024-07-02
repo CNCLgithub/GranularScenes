@@ -13,7 +13,7 @@ np = pyimport("numpy")
 # assuming scenes are 32x32
 dataset = "path_block_2024-03-14"
 burnin = 25
-chains = 3
+chains = 20
 max_step = 150
 steps = max_step - burnin
 
@@ -66,6 +66,9 @@ function main()
             aggregate_chains(scene_path, "ac")
             aggregate_chains(scene_path, "un")
 
+            scene_path *= "_deleted"
+            aggregate_chains(scene_path, "ac")
+            aggregate_chains(scene_path, "un")
             # shift_path = "$(exp_path)/$(r.id)_$(r.door)_furniture_$(r.move)"
             # @show shift_path
             # aggregate_chains(shift_path)
