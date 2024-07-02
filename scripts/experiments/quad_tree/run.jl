@@ -54,12 +54,12 @@ function parse_commandline(c)
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 3
+        default = 1
 
         "chain"
         help = "The number of chains to run"
         arg_type = Int
-        default = 20
+        default = 10
 
     end
 
@@ -73,7 +73,7 @@ function clear_wall(r::GridRoom)
     GridRoom(r, d)
 end
 
-function load_base_scene(path::String)
+function load_scene(path::String)
     local base_s
     open(path, "r") do f
         base_s = JSON.parse(f)
@@ -84,12 +84,12 @@ function load_base_scene(path::String)
 end
 
 function block_tile(r::GridRoom, tidx::Int)
-    d = data(r)
+    d = deepcopy(data(r))
     d[tidx] = obstacle_tile
     GridRoom(r, d)
 end
 
-function run_model(proc, query, out)
+function inference(proc, query, out)
     dlog = JLD2Logger(50, out)
     chain = run_chain(proc, query, proc.samples + 1, dlog)
     qt = get_retval(chain.state)
@@ -102,31 +102,28 @@ function main(c=ARGS)
     scene = args["scene"]
 
     println("Running inference on scene $(scene)")
-    # args["restart"] = true
+    args["restart"] = true
 
     manifest = CSV.File(base_path * ".csv")
     del_tile = manifest[:tidx][scene]
 
-    for door = [1, 2], version = [1,2]
+    for door = [1, 2]
         out_path = "/spaths/experiments/$(dataset)/$(scene)_$(door)"
 
         base_p = joinpath(base_path, "$(scene)_$(door).json")
-        room = load_base_scene(base_p)
-        if version == 2
-            room = block_tile(room, del_tile)
-            out_path *= "_blocked"
-        end
+        train = load_scene(base_p)
+        test = block_tile(train, del_tile)
 
 
         println("Saving results to: $(out_path)")
 
         # Load query (identifies the estimand)
-        query = query_from_params(room, args["gm"];
+        query = query_from_params(train, test, args["gm"];
                                   render_kwargs = Dict(:resolution => (256,256)))
 
 
-        model_params = first(query.args)
-        gt_img = GranularScenes.render(model_params.renderer, room)
+        # model_params = first(query.args)
+        # gt_img = GranularScenes.render(model_params.renderer, train)
         # save the gt image for reference
         # save_img_array(gt_img, "$(out_path)/gt.png")
 
@@ -169,21 +166,12 @@ function main(c=ARGS)
             end
             if !complete
                 println("Starting chain $c")
-                ac_qt = run_model(ac_proc, query, ac_out)
-                un_qt = run_model(un_proc, query, un_out)
-                # save_img_array(GranularScenes.render(model_params.renderer, ac_qt),
-                #             "$(out_path)/$(c)_ac.png")
-                # save_img_array(GranularScenes.render(model_params.renderer, un_qt),
-                #             "$(out_path)/$(c)_un.png")
+                ac_qt = inference(ac_proc, query, ac_out)
+                # un_qt = inference(un_proc, query, un_out)
             end
             println("Chain $(c) complete")
         end
     end
-
-
-
-
-
     return nothing
 end
 

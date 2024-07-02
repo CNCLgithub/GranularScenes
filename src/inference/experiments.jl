@@ -47,29 +47,43 @@ function ex_attention(c::AMHChain)
     attention_map(c.auxillary, c.state)
 end
 
-function query_from_params(room::GridRoom, path::String; kwargs...)
+"""
+    ptest(test, chain)
 
-    _lm = Dict{Symbol, Any}(
+Evaluates a sample of the posterior predictive
+distribution on a test image.
+"""
+function ptest(test::ChoiceMap, c::AMHChain)
+    state = c.state
+    _, w = Gen.update(state, test)
+    return w
+end
+
+function query_from_params(train::GridRoom, test::GridRoom,
+                           path::String; kwargs...)
+
+    gm_params = QuadTreeModel(train;
+                              read_json(path)...,
+                              kwargs...)
+    obs_train = create_obs(gm_params, train)
+    obs_test = create_obs(gm_params, test)
+    lm = LatentMap(Dict{Symbol, Any}(
         :attention => ex_attention,
         :obstacles => ex_obstacles,
         :granularity => ex_granularity,
         :path => ex_path,
         :img => ex_img,
-    )
-    latent_map = LatentMap(_lm)
-
-    gm_params = QuadTreeModel(room
-                              ;read_json(path)...,
-                              kwargs...)
-
-    obs = create_obs(gm_params, room)
-    # add_init_constraints!(obs, gm_params, room)
-
-    # Rooms.viz_room(room)
-
-    # compiling further observations for the model
-    query = Gen_Compose.StaticQuery(latent_map,
+        :score => c -> Gen.get_score(c.state),
+        :likelihood => c -> Gen.project(c.state, select(:pixels)),
+        # :prior => c -> Gen.project(c.state, select(:trackers)),
+        # the train metric
+        :train => c -> ptest(obs_train, c),
+        # the test metric
+        :test => c -> ptest(obs_test, c),
+    ))
+    # define the posterior over qt geometries
+    query = Gen_Compose.StaticQuery(lm,
                                     qt_model,
                                     (gm_params,),
-                                    obs)
+                                    obs_train)
 end
