@@ -20,7 +20,8 @@ scale = 8
 SUBPLOT_WIDTH=300
 
 def main():
-    scenes = [1, 2, 3]
+    scenes = [1,2,3,4,5,6]
+    # scenes = [1, 2, 3]
     titles = ['geo', 'att', 'pmat']
 
 
@@ -47,8 +48,8 @@ def main():
 
     exp_path = f'/spaths/experiments/{EXPNAME}'
 
-    for version in [1,2]:
-        for scene in [1,2,3]:
+    for version in [1]:
+        for scene in scenes:
             for door in [1,2]:
 
                 if version == 1:
@@ -86,10 +87,12 @@ def main():
 
 
         geo_fig.update_layout(
-            height = SUBPLOT_WIDTH * 3,
+            height = SUBPLOT_WIDTH * len(scenes),
             width = SUBPLOT_WIDTH * 2 + 15,
-            coloraxis1=dict(colorscale='blues'),
-            showlegend=False
+            coloraxis1=dict(colorscale='blues',
+                            cmin = 0,
+                            cmax = 1),
+            showlegend=False,
         )
 
         if version == 1:
@@ -101,7 +104,7 @@ def main():
 
 
         att_fig.update_layout(
-            height = SUBPLOT_WIDTH * 3,
+            height = SUBPLOT_WIDTH * len(scenes),
             width = SUBPLOT_WIDTH * 2 + 15,
             coloraxis1=dict(colorscale='reds'),
             showlegend=False
@@ -114,7 +117,7 @@ def main():
             att_fig.write_image(f'{exp_path}/deleted_ac_att.png')
 
         pmat_fig.update_layout(
-            height = SUBPLOT_WIDTH * 3,
+            height = SUBPLOT_WIDTH * len(scenes),
             width = SUBPLOT_WIDTH * 2 + 15,
             coloraxis1=dict(colorscale='greens'),
             showlegend=False

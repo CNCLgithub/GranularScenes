@@ -14,8 +14,8 @@ np = pyimport("numpy")
 # assuming scenes are 32x32
 dataset = "path_block_2024-03-14"
 exp_path = "/spaths/experiments/$(dataset)"
-burnin = 100
-chains = 10
+burnin = 1
+chains = 20
 max_step = 200
 steps = max_step - burnin
 
@@ -86,7 +86,7 @@ function main()
         test = Float32[]
     )
     # for r in eachrow(df)
-    for scene = 1:1
+    for scene = 1:6
         for door = [1, 2]
             aggregate_chains!(result, scene, door, :ac)
             # aggregate_chains!(result, scene, door, :un)

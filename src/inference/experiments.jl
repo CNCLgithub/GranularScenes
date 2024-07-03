@@ -55,8 +55,9 @@ distribution on a test image.
 """
 function ptest(test::ChoiceMap, c::AMHChain)
     state = c.state
-    _, w = Gen.update(state, test)
-    return w
+    tr, w = Gen.update(state, test)
+    Gen.project(tr, select(:pixels))
+    # return w
 end
 
 function query_from_params(train::GridRoom, test::GridRoom,

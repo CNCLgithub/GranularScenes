@@ -102,7 +102,7 @@ function main(c=ARGS)
     scene = args["scene"]
 
     println("Running inference on scene $(scene)")
-    args["restart"] = true
+    # args["restart"] = true
 
     manifest = CSV.File(base_path * ".csv")
     del_tile = manifest[:tidx][scene]

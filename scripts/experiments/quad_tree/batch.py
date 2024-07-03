@@ -11,7 +11,7 @@ script = 'bash {0!s}/env.d/run.sh ' + \
 
 def att_tasks(args):
     tasks = []
-    for scene in [1,2,3]:
+    for scene in [1,2,3,4,5,6]:
     # for scene in [3]:
         # base scene
         tasks.append((scene, args.chains))

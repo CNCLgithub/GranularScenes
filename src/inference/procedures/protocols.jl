@@ -51,7 +51,7 @@ function select_node(p::UniformProtocol, aux::UniformAux)
     # end
 
     node = rand(keys(aux.qt_idxs))
-    println("Uniform Protocol: node $(node)")
+    # println("Uniform Protocol: node $(node)")
     node
 end
 
@@ -79,7 +79,7 @@ end
 function rw_block_complete!(aux::UniformAux, p::UniformProtocol,
                             t::Gen.Trace, node)
     @unpack steps, accepts = aux
-    println("RW acceptance ratio for node $(node): $(accepts  / steps)")
+    # println("RW acceptance ratio for node $(node): $(accepts  / steps)")
     aux.steps = 0
     return nothing
 end
@@ -172,7 +172,7 @@ function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
         node = rand(keys(aux.queue))
         gr = aux.queue[node]
     end
-    println("Adaptive Protocol: node $(node), relevance $(gr)")
+    # println("Adaptive Protocol: node $(node), relevance $(gr)")
     # i = 1
     # for kv = aux.queue
     #     i > 3 && break
@@ -238,7 +238,7 @@ function rw_block_complete!(aux::AdaptiveAux,
     # end
     aux.queue[node] = goal_relevance
     accept_ratio = accepts / steps
-    println("\t $(delta_pi) + $(delta_s) | AR=$(accept_ratio)")
+    # println("\t $(delta_pi) + $(delta_s) | AR=$(accept_ratio)")
     return nothing
 end
 
@@ -255,7 +255,7 @@ end
 
 function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
                             node, move)
-    println("Accepted move $(move) on node $(node)")
+    # println("Accepted move $(move) on node $(node)")
     return nothing
 end
 
