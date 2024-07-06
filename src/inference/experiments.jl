@@ -60,14 +60,9 @@ function ptest(test::ChoiceMap, c::AMHChain)
     # return w
 end
 
-function query_from_params(train::GridRoom, test::GridRoom,
-                           path::String; kwargs...)
+function query_from_params(room::GridRoom, gm_params::QuadTreeModel)
 
-    gm_params = QuadTreeModel(train;
-                              read_json(path)...,
-                              kwargs...)
-    obs_train = create_obs(gm_params, train)
-    obs_test = create_obs(gm_params, test)
+    obs = create_obs(gm_params, room)
     lm = LatentMap(Dict{Symbol, Any}(
         :attention => ex_attention,
         :obstacles => ex_obstacles,
@@ -76,15 +71,10 @@ function query_from_params(train::GridRoom, test::GridRoom,
         :img => ex_img,
         :score => c -> Gen.get_score(c.state),
         :likelihood => c -> Gen.project(c.state, select(:pixels)),
-        # :prior => c -> Gen.project(c.state, select(:trackers)),
-        # the train metric
-        :train => c -> ptest(obs_train, c),
-        # the test metric
-        :test => c -> ptest(obs_test, c),
     ))
     # define the posterior over qt geometries
     query = Gen_Compose.StaticQuery(lm,
                                     qt_model,
                                     (gm_params,),
-                                    obs_train)
+                                    obs)
 end

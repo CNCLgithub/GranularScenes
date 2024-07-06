@@ -1,16 +1,13 @@
 using CSV
-using Gen: get_retval
 using JSON
 using JLD2
+using Rooms
 using FileIO
 using ArgParse
-# using DataFrames
 using Gen_Compose
-using Rooms
 using GranularScenes
-# using FunctionalScenes: shift_furniture
-
-using Random
+using Gen: get_retval
+using LinearAlgebra: lmul!
 
 dataset = "path_block_2024-03-14"
 
@@ -89,10 +86,41 @@ function block_tile(r::GridRoom, tidx::Int)
     GridRoom(r, d)
 end
 
-function inference(proc, query, out)
-    dlog = JLD2Logger(50, out)
-    chain = run_chain(proc, query, proc.samples + 1, dlog)
-    qt = get_retval(chain.state)
+function train(proc, query, out)
+    dlog = JLD2Logger(75, out)
+    run_chain(proc, query, proc.samples, dlog)
+    dlog
+end
+
+function marginalize(bfr, key)
+    n = length(bfr)
+    @show n
+    @assert n > 0
+    marginal = similar(bfr[1][key])
+    fill!(marginal, 0.0)
+    for i = 1:n
+        datum = bfr[i][key]
+        for j = eachindex(marginal)
+            marginal[j] += datum[j]
+        end
+    end
+    lmul!(1.0 / n, marginal)
+end
+
+function test(trained, proc, query, out)
+    bfr = buffer(trained)
+    marginal = marginalize(bfr, :obstacles)
+    model_params = first(query.args)
+    proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
+                      protocol = AdaptiveComputation(),
+                      ddp = generate_cm_from_ppd,
+                      ddp_args = (marginal,
+                                  model_params,
+                                  0.015),
+                      samples = 10)
+    dlog = JLD2Logger(10, out)
+    run_chain(proc, query, proc.samples + 1, dlog)
+    return nothing
 end
 
 
@@ -102,72 +130,61 @@ function main(c=ARGS)
     scene = args["scene"]
 
     println("Running inference on scene $(scene)")
-    # args["restart"] = true
+    args["restart"] = true
 
     manifest = CSV.File(base_path * ".csv")
     del_tile = manifest[:tidx][scene]
 
+    model = "ac"
+
     for door = [1, 2]
-        out_path = "/spaths/experiments/$(dataset)/$(scene)_$(door)"
+        out_path = "/spaths/experiments/$(dataset)_$(model)/$(scene)_$(door)"
 
         base_p = joinpath(base_path, "$(scene)_$(door).json")
-        train = load_scene(base_p)
-        test = block_tile(train, del_tile)
+        train_room = load_scene(base_p)
+        test_room = block_tile(train_room, del_tile)
 
+        gm_params = QuadTreeModel(train_room;
+                                  read_json(args["gm"])...,
+                                  render_kwargs =
+                                      Dict(:resolution => (256,256)))
 
         println("Saving results to: $(out_path)")
 
         # Load query (identifies the estimand)
-        query = query_from_params(train, test, args["gm"];
-                                  render_kwargs = Dict(:resolution => (256,256)))
+        train_query = query_from_params(train_room, gm_params)
+        test_query = query_from_params(test_room, gm_params)
 
-
-        # model_params = first(query.args)
-        # gt_img = GranularScenes.render(model_params.renderer, train)
-        # save the gt image for reference
-        # save_img_array(gt_img, "$(out_path)/gt.png")
-
-        # ddp_params = DataDrivenState(;config_path = args["ddp"],
-        #                              var = 0.001)
-
-        ac_proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
-                        # ddp = generate_cm_from_ddp,
-                        # ddp_args = (ddp_params, gt_img, model_params, 3),
-                        protocol = AdaptiveComputation()
-                        )
-        un_proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
-                        # ddp = generate_cm_from_ddp,
-                        # ddp_args = (ddp_params, gt_img, model_params, 3),
-                        protocol = UniformProtocol()
-                        )
+        proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
+                          protocol = AdaptiveComputation())
         try
-            isdir("/spaths/experiments/$(dataset)") || mkpath("/spaths/experiments/$(dataset)")
+            isdir("/spaths/experiments/$(dataset)_$(model)") ||
+                mkpath("/spaths/experiments/$(dataset)_$(model)")
             isdir(out_path) || mkpath(out_path)
         catch e
             println("could not make dir $(out_path)")
         end
 
-
         # how many chains to run
         for c = 1:args["chain"]
             # Random.seed!(c)
-            ac_out = joinpath(out_path, "ac_$(c).jld2")
-            un_out = joinpath(out_path, "un_$(c).jld2")
+            train_out = joinpath(out_path, "train_$(c).jld2")
+            test_out = joinpath(out_path, "test_$(c).jld2")
             complete = false
-            if isfile(ac_out) || isfile(un_out)
+            if isfile(train_out) || isfile(test_out)
                 println("Record(s) found for chain: $(c)")
                 if args["restart"]
                     println("restarting")
-                    isfile(ac_out) && rm(ac_out)
-                    isfile(un_out) && rm(un_out)
+                    isfile(train_out) && rm(train_out)
+                    isfile(test_out) && rm(test_out)
                 else
-                    complete = isfile(ac_out) && isfile(un_out)
+                    complete = isfile(train_out) && isfile(test_out)
                 end
             end
             if !complete
                 println("Starting chain $c")
-                ac_qt = inference(ac_proc, query, ac_out)
-                # un_qt = inference(un_proc, query, un_out)
+                trained = train(proc, train_query, train_out)
+                test(trained, proc, test_query, test_out)
             end
             println("Chain $(c) complete")
         end

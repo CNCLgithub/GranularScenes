@@ -6,8 +6,10 @@ include("split_merge_gen.jl")
 
 function can_split(trace::Gen.Trace, node)
     qt = get_retval(trace)
-    prod_node = traverse_qt(qt, node).node
-    prod_node.max_level > prod_node.level
+    agg_node = traverse_qt(qt, node)
+    prod_node = agg_node.node
+    w = weight(agg_node) # NOTE: -Inf in prop if w = 0
+    prod_node.max_level > prod_node.level && w > 1E-3
 end
 
 function construct_translator(::MoveDirection, node::Int64)
@@ -75,7 +77,9 @@ function balanced_split_merge(t::Gen.Trace, tidx::Int64)::Bool
     # and if siblings are all terminal : Merge <-> Split
     parent_idx = Gen.get_parent(tidx, 4)
     parent_st = traverse_qt(qt, parent_idx)
-    all(x -> isempty(x.children), parent_st.children)
+    siblings = parent_st.children
+    all(x -> isempty(x.children), siblings) &&
+        all(x -> weight(x) > 1E-3, siblings)
 end
 
 function compare_latents(a::Gen.Trace, b::Gen.Trace,

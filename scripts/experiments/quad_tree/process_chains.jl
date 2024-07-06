@@ -13,10 +13,11 @@ np = pyimport("numpy")
 
 # assuming scenes are 32x32
 dataset = "path_block_2024-03-14"
-exp_path = "/spaths/experiments/$(dataset)"
-burnin = 1
-chains = 20
-max_step = 200
+model = "ac"
+exp_path = "/spaths/experiments/$(dataset)_$(model)"
+burnin = 50
+chains = 10
+max_step = 150
 steps = max_step - burnin
 
 # Data to extract
@@ -28,67 +29,66 @@ gran = Array{UInt8, 4}(undef, qt_dims)
 img = Array{Float32, 4}(undef, (chains, 256, 256, 3))
 _img = Array{Float32, 3}(undef, (256, 256, 3))
 
-function aggregate_chains!(df::DataFrame, scene::Int, door::Int, model::Symbol)
+function aggregate_chains!(df::DataFrame, scene::Int, door::Int, mode::Symbol)
     path = "$(exp_path)/$(scene)_$(door)"
     # @show path
     score::Float32 = -Inf
     likelihood::Float32 = -Inf
-    train::Float32 = -Inf
-    test::Float32 = -Inf
+    prior::Float32 = -Inf
+    start_s = mode == :train ? burnin : 1
+    max_s = steps
     for c = 1:chains
-        c_path = "$(path)/$(model)_$(c).jld2"
+        c_path = "$(path)/$(mode)_$(c).jld2"
         fill!(_img, 0.0)
         jldopen(c_path, "r") do file
-            for s = 1:steps
+            max_s = min(file["current_idx"], max_step)
+            for s = start_s:max_s
                 # @show s
-                data = file["$(s + burnin)"]
-                att[c, s, :, :] = data[:attention]
-                geo[c, s, :, :] = data[:obstacles]
-                pmat[c, s, :, :] = data[:path]
-                gran[c, s, :, :] = data[:granularity]
-                _img[:, :, :] += data[:img]
+                data = file["$(s)"]
+                # att[c, s, :, :] = data[:attention]
+                # geo[c, s, :, :] = data[:obstacles]
+                # pmat[c, s, :, :] = data[:path]
+                # gran[c, s, :, :] = data[:granularity]
+                # _img[:, :, :] += data[:img]
 
                 score = logsumexp(score, data[:score])
                 likelihood = logsumexp(likelihood, data[:likelihood])
-                train = logsumexp(train, data[:train])
-                test = logsumexp(test, data[:test])
             end
-            rmul!(_img, 1.0 / steps)
+            rmul!(_img, 1.0 / (max_s - start_s))
             img[c, :, :, :] = _img
         end
     end
-    np.savez("$(path)_$(model)_aggregated.npz",
-             att = att,
-             geo=geo,
-             pmat=pmat,
-             gran=gran,
-             img=img,
-             )
-
-    logn = log(chains * steps)
+    # np.savez("$(path)_$(mode)_aggregated.npz",
+    #          att = att,
+    #          geo=geo,
+    #          pmat=pmat,
+    #          gran=gran,
+    #          img=img,
+    #          )
+    # @show max_s
+    logn = log(chains * (max_s - start_s))
     score -= logn
     likelihood -= logn
-    train -= logn
-    test -= logn
-    push!(df, [model, scene, door, score, likelihood, train, test])
+    prior = score - likelihood
+    push!(df, [mode, scene, door, score, likelihood, prior])
     return nothing
 end
 
 function main()
     df = DataFrame(CSV.File("/spaths/datasets/$(dataset)/scenes.csv"))
     result = DataFrame(
-        model = Symbol[],
+        mode = Symbol[],
         scene = UInt8[],
         door = UInt8[],
         score = Float32[],
         likelihood = Float32[],
-        train = Float32[],
-        test = Float32[]
+        prior = Float32[]
     )
     # for r in eachrow(df)
-    for scene = 1:6
+    for scene = 1:1
         for door = [1, 2]
-            aggregate_chains!(result, scene, door, :ac)
+            aggregate_chains!(result, scene, door, :train)
+            aggregate_chains!(result, scene, door, :test)
             # aggregate_chains!(result, scene, door, :un)
         end
     end
