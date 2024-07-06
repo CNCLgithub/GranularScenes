@@ -56,7 +56,7 @@ function parse_commandline(c)
         "chain"
         help = "The number of chains to run"
         arg_type = Int
-        default = 10
+        default = 1
 
     end
 
@@ -87,9 +87,12 @@ function block_tile(r::GridRoom, tidx::Int)
 end
 
 function train(proc, query, out)
-    dlog = JLD2Logger(75, out)
-    run_chain(proc, query, proc.samples, dlog)
-    dlog
+    dlog = JLD2Logger(100, out)
+    c = run_chain(proc, query, proc.samples, dlog)
+    marginal = marginalize(buffer(dlog), :obstacles)
+    # HACK: save last chunk of train chain
+    Gen_Compose.report_step!(dlog, c)
+    return marginal
 end
 
 function marginalize(bfr, key)
@@ -107,16 +110,14 @@ function marginalize(bfr, key)
     lmul!(1.0 / n, marginal)
 end
 
-function test(trained, proc, query, out)
-    bfr = buffer(trained)
-    marginal = marginalize(bfr, :obstacles)
+function test(marginal, proc, query, out)
     model_params = first(query.args)
     proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
                       protocol = AdaptiveComputation(),
                       ddp = generate_cm_from_ppd,
                       ddp_args = (marginal,
                                   model_params,
-                                  0.015),
+                                  0.0175),
                       samples = 10)
     dlog = JLD2Logger(10, out)
     run_chain(proc, query, proc.samples + 1, dlog)

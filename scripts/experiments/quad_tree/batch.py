@@ -29,9 +29,9 @@ def main():
     parser.add_argument('--scenes', type = str,
                         default = 'ccn_2023_exp',
                         help = 'number of scenes') ,
-    parser.add_argument('--chains', type = int, default = 20,
+    parser.add_argument('--chains', type = int, default = 30,
                         help = 'number of chains')
-    parser.add_argument('--duration', type = int, default = 30,
+    parser.add_argument('--duration', type = int, default = 20,
                         help = 'job duration (min)')
 
 
@@ -48,7 +48,7 @@ def main():
     slurm_out = os.path.join(os.getcwd(), 'env.d/spaths/slurm')
     resources = {
         'cpus-per-task' : '1',
-        'mem-per-cpu' : '8GB',
+        'mem-per-cpu' : '6GB',
         'time' : '{0:d}'.format(args.duration),
         'partition' : 'gpu',
         'gres' : 'gpu:1',
