@@ -48,10 +48,10 @@ def main():
     slurm_out = os.path.join(os.getcwd(), 'env.d/spaths/slurm')
     resources = {
         'cpus-per-task' : '1',
-        'mem-per-cpu' : '6GB',
+        'mem-per-cpu' : '8GB',
         'time' : '{0:d}'.format(args.duration),
         'partition' : 'gpu',
-        'gres' : 'gpu:1',
+        'gres' : 'gpu:a40:1',
         'requeue' : None,
         'job-name' : 'rooms',
         'chdir' : os.getcwd(),

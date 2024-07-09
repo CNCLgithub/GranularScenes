@@ -3,6 +3,7 @@ using JSON
 using JLD2
 using Rooms
 using FileIO
+# using Random
 using ArgParse
 using Gen_Compose
 using GranularScenes
@@ -56,7 +57,7 @@ function parse_commandline(c)
         "chain"
         help = "The number of chains to run"
         arg_type = Int
-        default = 1
+        default = 5
 
     end
 
@@ -87,8 +88,10 @@ function block_tile(r::GridRoom, tidx::Int)
 end
 
 function train(proc, query, out)
-    dlog = JLD2Logger(100, out)
+    dlog = JLD2Logger(50, out)
     c = run_chain(proc, query, proc.samples, dlog)
+    println("Final step")
+    GranularScenes.viz_chain(c)
     marginal = marginalize(buffer(dlog), :obstacles)
     # HACK: save last chunk of train chain
     Gen_Compose.report_step!(dlog, c)
@@ -110,17 +113,17 @@ function marginalize(bfr, key)
     lmul!(1.0 / n, marginal)
 end
 
-function test(marginal, proc, query, out)
+function test(marginal, query, out)
     model_params = first(query.args)
-    proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
+    p = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
                       protocol = AdaptiveComputation(),
                       ddp = generate_cm_from_ppd,
                       ddp_args = (marginal,
                                   model_params,
                                   0.0175),
                       samples = 10)
-    dlog = JLD2Logger(10, out)
-    run_chain(proc, query, proc.samples + 1, dlog)
+    dlog = JLD2Logger(p.samples, out)
+    run_chain(p, query, p.samples + 1, dlog)
     return nothing
 end
 
@@ -134,7 +137,7 @@ function main(c=ARGS)
     args["restart"] = true
 
     manifest = CSV.File(base_path * ".csv")
-    del_tile = manifest[:tidx][scene]
+    tile = manifest[:tidx][scene]
 
     model = "ac"
 
@@ -143,7 +146,7 @@ function main(c=ARGS)
 
         base_p = joinpath(base_path, "$(scene)_$(door).json")
         train_room = load_scene(base_p)
-        test_room = block_tile(train_room, del_tile)
+        test_room = block_tile(train_room, tile)
 
         gm_params = QuadTreeModel(train_room;
                                   read_json(args["gm"])...,
@@ -152,7 +155,6 @@ function main(c=ARGS)
 
         println("Saving results to: $(out_path)")
 
-        # Load query (identifies the estimand)
         train_query = query_from_params(train_room, gm_params)
         test_query = query_from_params(test_room, gm_params)
 
@@ -169,23 +171,25 @@ function main(c=ARGS)
         # how many chains to run
         for c = 1:args["chain"]
             # Random.seed!(c)
-            train_out = joinpath(out_path, "train_$(c).jld2")
-            test_out = joinpath(out_path, "test_$(c).jld2")
+            c1_out = joinpath(out_path, "c1_$(c).jld2")
+            c2_out = joinpath(out_path, "c2_$(c).jld2")
+            c3_out = joinpath(out_path, "c3_$(c).jld2")
+            outs = [c1_out, c2_out, c3_out]
             complete = false
-            if isfile(train_out) || isfile(test_out)
+            if any(isfile, outs)
                 println("Record(s) found for chain: $(c)")
                 if args["restart"]
                     println("restarting")
-                    isfile(train_out) && rm(train_out)
-                    isfile(test_out) && rm(test_out)
+                    foreach(o -> isfile(o) && rm(o), outs)
                 else
-                    complete = isfile(train_out) && isfile(test_out)
+                    complete = all(isfile, outs)
                 end
             end
             if !complete
                 println("Starting chain $c")
-                trained = train(proc, train_query, train_out)
-                test(trained, proc, test_query, test_out)
+                trained = train(proc, train_query, c1_out)
+                test(trained, test_query, c2_out)
+                test(trained, train_query, c3_out)
             end
             println("Chain $(c) complete")
         end

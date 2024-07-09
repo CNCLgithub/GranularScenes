@@ -42,15 +42,16 @@ function Gen_Compose.initialize_chain(proc::AdaptiveMH,
                                       query::StaticQuery,
                                       n::Int)
     # Intialize using DDP
-    cm = query.observations
-    prior_cm = proc.ddp(proc.ddp_args...)
-    if has_submap(prior_cm, :trackers)
-        set_submap!(cm, :trackers,
-                    get_submap(prior_cm, :trackers))
-    end
+    constraints = proc.ddp(proc.ddp_args...)
+    constraints[:pixels] = query.observations[:pixels]
+    # if has_submap(query.observations, :pixels)
+    #     set_submap!(constraints, :pixels,
+    #                 get_submap(query.observations, :pixels))
+    # end
+    # display(constraints)
     trace,_ = Gen.generate(query.forward_function,
                            query.args,
-                           cm)
+                           constraints)
 
     println("Initial state")
     display_mat(project_qt(get_retval(trace)))
@@ -69,7 +70,7 @@ function Gen_Compose.step!(chain::AMHChain)
     # proposal
     kernel_move!(chain)
 
-    viz_chain(chain)
+    # viz_chain(chain)
     # println("current score $(get_score(chain.state))")
     return nothing
 end
@@ -173,20 +174,21 @@ end
 
 
 function viz_chain(chain::AMHChain)
-    chain.step % 10 == 0 || return nothing
+    # chain.step % 10 == 0 || return nothing
     @unpack auxillary, state = chain
     params = first(get_args(state))
     qt = get_retval(state)
     # println("Attention")
     # s = size(auxillary.sensitivities)
     # display_mat(reshape(auxillary.weights, s))
-    # println("Inferred state")
-    # display_mat(project_qt(qt))
+    println("Inferred state")
+    display_mat(project_qt(qt))
     # println("Estimated path")
     # path = Matrix{Float64}(ex_path(chain))
     # display_mat(path)
     # println("Predicted Image")
     # display_img(trace_st.img_mu)
+    return nothing
 end
 
 # function display_selected_node(sidx, dims)
