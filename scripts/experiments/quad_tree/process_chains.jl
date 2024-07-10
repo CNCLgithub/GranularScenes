@@ -125,6 +125,9 @@ function main()
     transform!(wide,
                [:delta_change, :delta_same] => ByRow(-) => :w,
                )
+    transform!(wide,
+               :w => ByRow(w -> exp(min(0., w))) => :p,
+               )
 
     display(wide)
 
@@ -132,6 +135,7 @@ function main()
                     :delta_change => mean,
                     :delta_same => mean,
                     :w => mean,
+                    :p => mean,
                     # :delta_change => std,
                     # :delta_same => std,
                     )

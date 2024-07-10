@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# BASE="/gpfs/milgram/scratch60/yildirim/meb266/tmp"
-BASE="/gpfs/radev/project/yildirim/meb266/GranularScenes/env.d/tmp"
+BASE="/gpfs/milgram/scratch60/yildirim/meb266/GranularScenes/env.d/tmp"
+# BASE="/gpfs/radev/project/yildirim/meb266/GranularScenes/env.d/tmp"
 
 if [ -n "$SLURM_ARRAY_JOB_ID" ]; then
   TDIR="${BASE}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
