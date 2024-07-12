@@ -42,15 +42,16 @@ function Gen_Compose.initialize_chain(proc::AdaptiveMH,
                                       query::StaticQuery,
                                       n::Int)
     # Intialize using DDP
-    cm = query.observations
-    prior_cm = proc.ddp(proc.ddp_args...)
-    if has_submap(prior_cm, :trackers)
-        set_submap!(cm, :trackers,
-                    get_submap(prior_cm, :trackers))
-    end
+    constraints = proc.ddp(proc.ddp_args...)
+    constraints[:pixels] = query.observations[:pixels]
+    # if has_submap(query.observations, :pixels)
+    #     set_submap!(constraints, :pixels,
+    #                 get_submap(query.observations, :pixels))
+    # end
+    # display(constraints)
     trace,_ = Gen.generate(query.forward_function,
                            query.args,
-                           cm)
+                           constraints)
 
     println("Initial state")
     display_mat(project_qt(get_retval(trace)))
@@ -69,7 +70,7 @@ function Gen_Compose.step!(chain::AMHChain)
     # proposal
     kernel_move!(chain)
 
-    viz_chain(chain)
+    # viz_chain(chain)
     # println("current score $(get_score(chain.state))")
     return nothing
 end
@@ -99,9 +100,9 @@ function kernel_move!(chain::AMHChain)
     for j = 1:rw_budget
         _t, alpha = rw_move(t, node)
         rw_block_inc!(aux, protocol, _t, node, alpha)
-        # println("RW weight: $(alpha)")
-        # compare_latents(t, _t, node)
         if log(rand()) < alpha # accept?
+            # println("RW weight: $(alpha)")
+            # compare_latents(t, _t, node)
             rw_block_accept!(aux, protocol, _t, node)
             t = _t
         end
@@ -173,7 +174,7 @@ end
 
 
 function viz_chain(chain::AMHChain)
-    chain.step % 10 == 0 || return nothing
+    # chain.step % 10 == 0 || return nothing
     @unpack auxillary, state = chain
     params = first(get_args(state))
     qt = get_retval(state)
@@ -187,6 +188,7 @@ function viz_chain(chain::AMHChain)
     # display_mat(path)
     # println("Predicted Image")
     # display_img(trace_st.img_mu)
+    return nothing
 end
 
 # function display_selected_node(sidx, dims)

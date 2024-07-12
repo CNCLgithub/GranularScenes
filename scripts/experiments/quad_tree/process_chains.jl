@@ -4,90 +4,145 @@ using JSON
 using FileIO
 using PyCall
 using DataFrames
-# using FunctionalScenes
+using DataFrames: select
 using Statistics
 using LinearAlgebra
-using Images: imresize
+using Gen: logsumexp
 
 
 np = pyimport("numpy")
 
 # assuming scenes are 32x32
-dataset = "ccn_2023_exp"
-burnin = 25
-chains = 5
-steps = 150
-scale = 4
+dataset = "path_block_2024-03-14"
+model = "ac"
+scenes = 1:6
+exp_path = "/spaths/experiments/$(dataset)_$(model)"
+burnin = 50
+chains = 30
+max_step = 100
+steps = max_step - burnin
 
-function aggregate_chains(path::String, chains::Int64, steps)
-    att = zeros((chains, steps, 32, 32))
-    geo = zeros((chains, steps, 32, 32))
-    pmat = zeros(Int64, (chains, steps, 32, 32))
-    gran = zeros(Int64, (chains, steps, 32, 32))
-    img = zeros((chains, steps, 128, 128, 3))
+# Data to extract
+qt_dims = (chains, steps, 16, 16)
+att = Array{Float32, 4}(undef, qt_dims)
+geo = Array{Float32, 4}(undef, qt_dims)
+pmat = Array{Bool, 4}(undef, qt_dims)
+gran = Array{UInt8, 4}(undef, qt_dims)
+img = Array{Float32, 4}(undef, (chains, 256, 256, 3))
+_img = Array{Float32, 3}(undef, (256, 256, 3))
+
+function aggregate_chains!(df::DataFrame, scene::Int, door::Int, mode::Symbol)
+    path = "$(exp_path)/$(scene)_$(door)"
+    @show path
+    start_s = mode == :c1 ? burnin : 1
+    max_s = steps
     for c = 1:chains
-        c_path = "$(path)/$(c).jld2"
+        c_path = "$(path)/$(mode)_$(c).jld2"
+        fill!(_img, 0.0)
+        score::Float32 = -Inf
+        likelihood::Float32 = -Inf
+        prior::Float32 = -Inf
         jldopen(c_path, "r") do file
-        for s = 1:steps
-            # data = load(c_path, "$s")
-            data = file["$s"]
-            att[c, s, :, :] = data[:attention][:sensitivities]
-            geo[c, s, :, :] = data[:projected]
-            pmat[c, s, :, :] = data[:path]
-            gran[c, s, :, :] = data[:granularity]
-            img[c, s, :, :, :] = data[:img_mu]
+            @show file["current_idx"]
+            max_s = min(file["current_idx"], max_step)
+            # integrate across samples
+            for s = start_s:max_s
+                # @show s
+                data = file["$(s)"]
+                # att[c, s, :, :] = data[:attention]
+                # geo[c, s, :, :] = data[:obstacles]
+                # pmat[c, s, :, :] = data[:path]
+                # gran[c, s, :, :] = data[:granularity]
+                # _img[:, :, :] += data[:img]
+
+                score = logsumexp(score, data[:score])
+                likelihood = logsumexp(likelihood, data[:likelihood])
+            end
+            rmul!(_img, 1.0 / (max_s - start_s))
+            img[c, :, :, :] = _img
         end
-        end
+        nsteps = max_s - start_s
+        @show nsteps
+        logn = log(nsteps)
+        score -= logn
+        likelihood -= logn
+        prior = score - likelihood
+        push!(df, [scene, door, c, mode, score, likelihood, prior])
     end
-    np.savez("$(path)_aggregated.npz",
-                      att = att,
-                      geo=geo,
-                      pmat=pmat,
-                      gran=gran,
-                      img=img)
-
-    att_mu = reshape(mean(att[:, burnin:end, :, :], dims = (1, 2)), 32, 32)
-    att_mu = imresize(att_mu, (scale,scale))
-    geo_mu = reshape(mean(geo[:, burnin:end, :, :], dims = (1, 2)), 32, 32)
-    geo_mu = imresize(geo_mu, (scale,scale))
-    geo_init = reshape(mean(geo[:, 1:2, :, :], dims = (1, 2)), 32, 32)
-    geo_init = imresize(geo_init, (scale,scale))
-    GC.gc(true)
-    return att_mu, geo_mu - geo_init
-end
-
-function main()
-    exp_path = "/spaths/experiments/$(dataset)"
-    df = DataFrame(CSV.File("/spaths/datasets/$(dataset)/scenes.csv"))
-    results = DataFrame(scene = Int64[],
-                        max_diff_geo = Float64[],
-                        mag_diff_geo = Float64[],
-                        tot_diff_geo = Float64[])
-    geo_comp = zeros((scale, scale, 2, 30))
-    for r in eachrow(df)
-        base_path = "$(exp_path)/$(r.id)_$(r.door)"
-        @show base_path
-        base_att, base_geo = aggregate_chains(base_path, chains, steps)
-
-        shift_path = "$(exp_path)/$(r.id)_$(r.door)_furniture_$(r.move)"
-        @show shift_path
-        shift_att, shift_geo = aggregate_chains(shift_path, chains, steps)
-        geo_diff = base_geo - shift_geo
-        geo_diff[end, :] .= 0.
-        geo_comp[:, :, r.door, r.id] = base_geo - shift_geo
-    end
-    for i = 1:30
-        # diff_att = norm(base_att - shift_att)
-        diff = geo_comp[:, :, 1, i] - geo_comp[:, :, 2, i]
-        tot_diff_geo = norm(diff)
-        mag_diff_geo = sum(diff)
-        # max_diff_geo = maximum(abs.(geo_comp[:, :, 1, i])) - maximum(abs.(geo_comp[:, :, 2, i]))
-        max_diff_geo = diff[findmax(abs.(diff))[2]]
-        push!(results, (scene = i, max_diff_geo = max_diff_geo, mag_diff_geo=mag_diff_geo,
-                        tot_diff_geo=tot_diff_geo))
-    end
-    CSV.write("$(exp_path)/chain_summary_$(steps)_$(burnin).csv", results)
+    # np.savez("$(path)_$(mode)_aggregated.npz",
+    #          att = att,
+    #          geo=geo,
+    #          pmat=pmat,
+    #          gran=gran,
+    #          img=img,
+    #          )
+    # @show max_s
     return nothing
 end
 
-main();
+function main()
+    df = DataFrame(CSV.File("/spaths/datasets/$(dataset)/scenes.csv"))
+    result = DataFrame(
+        scene = UInt8[],
+        door = UInt8[],
+        chain = UInt8[],
+        mode = Symbol[],
+        score = Float32[],
+        likelihood = Float32[],
+        prior = Float32[]
+    )
+    # for r in eachrow(df)
+    for scene = scenes
+        for door = [1, 2]
+            aggregate_chains!(result, scene, door, :c1)
+            aggregate_chains!(result, scene, door, :c2)
+            aggregate_chains!(result, scene, door, :c3)
+            # aggregate_chains!(result, scene, door, :un)
+        end
+    end
+
+    sort!(result, Cols(:scene, :door, :chain, :mode))
+    display(result)
+
+    # diffs = combine(groupby(filter(:mode => !=(:c3), result), Cols(:scene, :door, :chain)),
+    #                 :score => (x -> abs(x[2] - x[1])) =>
+    #                     :diff_score)
+    # diffs = combine(groupby(diffs, Cols(:scene, :door)),
+    #                 :diff_score => mean =>
+    #                     :avg_diff_score)
+
+    wide = unstack(select(result, Cols(:scene, :door, :mode, :chain, :score)),
+                          :mode, :score)
+
+    # wide = unstack(select(result, Cols(:mode, :scene, :door, :chain, :score)),
+    #                       :mode, :score)
+    transform!(wide,
+               [:c2, :c1] => ByRow(-) => :delta_change,
+               [:c3, :c1] => ByRow(-) => :delta_same,
+               # [:c1, :c2] => ByRow(abs ∘ -) => :delta_change,
+               # [:c1, :c3] => ByRow(abs ∘ -) => :delta_same,
+               )
+    transform!(wide,
+               [:delta_change, :delta_same] => ByRow(-) => :w,
+               )
+    transform!(wide,
+               :w => ByRow(w -> exp(min(0., w))) => :p,
+               )
+
+    display(wide)
+
+    diffs = combine(groupby(wide, Cols(:scene, :door)),
+                    :delta_change => mean,
+                    :delta_same => mean,
+                    :w => mean,
+                    :p => mean,
+                    # :delta_change => std,
+                    # :delta_same => std,
+                    )
+
+    display(diffs)
+    CSV.write("/spaths/experiments/$(dataset)_$(model)_chains.csv", result)
+    return result
+end
+
+result = main();

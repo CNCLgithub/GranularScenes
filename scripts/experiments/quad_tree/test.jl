@@ -73,7 +73,8 @@ function load_scene()
     d = data(r)
     d[:, 1:2] .= floor_tile
     d[2:4, 2:4] .= obstacle_tile
-    expand(GridRoom(r, d), 2)
+    # expand(GridRoom(r, d), 2)
+    GridRoom(r, d)
 end
 
 
@@ -96,13 +97,14 @@ function main(c=ARGS)
 
     # Load estimator - Adaptive MCMC
     model_params = first(query.args)
-    ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                 var = 0.5)
+    # ddp_params = DataDrivenState(;config_path = args["ddp"],
+    #                              var = 0.15)
     gt_img = GranularScenes.render(model_params.renderer, room)
 
     proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
-                      ddp = generate_cm_from_ddp,
-                      ddp_args = (ddp_params, gt_img, model_params, 3),
+                      samples = 100,
+                      # ddp = generate_cm_from_ddp,
+                      # ddp_args = (ddp_params, gt_img, model_params, 3),
                       # start with no ddp
                       # ddp_args = (ddp_params, gt_img, model_params),
                       #

@@ -68,23 +68,9 @@ Maximum depth of quad tree
 function _max_depth(r::GridRoom)
     @unpack bounds, steps = r
     # FIXME: allow for arbitrary room steps
-    @assert all(ispow2.(steps))
+    @assert all(ispow2.(steps)) "Room not a power of 2"
     convert(Int64, minimum(log2.(steps)) + 1)
 end
-
-
-
-# struct QuadTreeState
-#     qt::QuadTree
-#     img_mu::Array{Float64, 3}
-#     img_sd::Array{Float64, 3}
-#     path::QTPath
-# end
-
-
-#################################################################################
-# Graphics
-#################################################################################
 
 #################################################################################
 # Inference utils

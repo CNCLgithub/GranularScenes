@@ -10,8 +10,6 @@ struct TaichiScene
     obstacle_map::Matrix{Float32}
 end
 
-SPP = 200
-
 """
     $(TYPEDSIGNATURES)
 
@@ -44,6 +42,12 @@ function init_voxel_buffer!(vx::PyObject,
     return buffer
 end
 
+function write_obstacles!(m::Matrix{Float32}, mt::Matrix{Float64})
+    for i = eachindex(m)
+        m[i] = Float32(mt[i])
+    end
+    return nothing
+end
 
 function write_obstacles!(m::Matrix{Float32}, gr::GridRoom)
     for i = eachindex(m)
@@ -66,7 +70,7 @@ function render(scene::TaichiScene, obj)
     write_obstacles!(scene.obstacle_map, obj)
     @pycall vx.set_obstacles(scene.obstacle_map)::PyObject
 
-    result = @pycall vx.render_scene(SPP)::PyObject
+    result = @pycall vx.render_scene()::PyObject
 
     return result
 end
@@ -95,7 +99,7 @@ function Gen.random(::TaichiObserve, s::TaichiScene, obj, var::Float32)
     @pycall vx.reset_voxels()::PyObject
     write_obstacles!(s.obstacle_map, obj)
     @pycall vx.set_obstacles(s.obstacle_map)::PyObject
-    result = @pycall vx.random(var, SPP)::PyObject
+    result = @pycall vx.random(var)::PyObject
     return result
 end
 
@@ -107,7 +111,7 @@ function Gen.logpdf(::TaichiObserve, img::PyObject, s::TaichiScene,
     write_obstacles!(s.obstacle_map, obj)
     @pycall vx.set_obstacles(s.obstacle_map)::PyObject
     # py"print($img.shape)"
-    result = @pycall vx.logpdf(img, var, SPP)::Float64
+    result = @pycall vx.logpdf(img, var)::Float64
     return result
 end
 
