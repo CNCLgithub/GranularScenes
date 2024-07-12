@@ -1,4 +1,5 @@
-export generate_cm_from_ppd
+export generate_cm_from_ppd,
+    fixed_granularity_cm
 
 function generate_cm_from_ppd(marginal::Matrix{<:Real},
                               model_params, var::Float64,
@@ -32,5 +33,26 @@ function generate_cm_from_ppd(marginal::Matrix{<:Real},
         end
     end
     println("PPD yielded $nodes qt leaves")
+    return cm
+end
+
+function fixed_granularity_cm(model_params, min_depth)
+    head = model_params.start_node
+    d = model_params.dims[2]
+    max_depth = model_params.max_depth
+    # Iterate through QT
+    cm = choicemap()
+    queue = [model_params.start_node]
+    while !isempty(queue)
+        head = pop!(queue)
+        idx = node_to_idx(head, d)
+        # restricting depth of nn
+        split = head.level < min_depth
+        cm[:trackers => (head.tree_idx, Val(:production)) => :produce] = split
+        if split
+            # add children to queue
+            append!(queue, produce_qt(head))
+        end
+    end
     return cm
 end

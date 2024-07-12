@@ -42,6 +42,12 @@ function init_voxel_buffer!(vx::PyObject,
     return buffer
 end
 
+function write_obstacles!(m::Matrix{Float32}, mt::Matrix{Float64})
+    for i = eachindex(m)
+        m[i] = Float32(mt[i])
+    end
+    return nothing
+end
 
 function write_obstacles!(m::Matrix{Float32}, gr::GridRoom)
     for i = eachindex(m)

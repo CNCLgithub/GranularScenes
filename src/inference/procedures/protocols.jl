@@ -25,34 +25,14 @@ accepts(aux::UniformAux) = aux.accepts
 function AuxState(p::UniformProtocol, trace)
     qt = get_retval(trace)
     q = PriorityQueue{Int64, Float64, ReverseOrdering}(Reverse)
-    # q = PriorityQueue{Int64, Float64}()
-    # go through the current set of terminal nodes
-    # and intialize priority
     for (i, n) = enumerate(qt.leaves)
-        q[n.node.tree_idx] = 5 * area(n.node)
+        q[n.node.tree_idx] = -Inf
     end
     UniformAux(0, 0, q)
 end
 
 function select_node(p::UniformProtocol, aux::UniformAux)
-    # ws = softmax(collect(values(aux.qt_idxs)))
-    # stop = 0.0
-    # node = 0
-    # nidxs = 0
-    # for (i, (nidx, w)) = enumerate(aux.qt_idxs)
-    #     stop += exp(ws[i])
-    #     if rand() < stop
-    #         node = nidx
-    #         break
-    #     end
-    # end
-    # if node === 0 # || isinf(denom)
-    #     node = rand(keys(aux.queue))
-    # end
-
-    node = rand(keys(aux.qt_idxs))
-    # println("Uniform Protocol: node $(node)")
-    node
+    rand(keys(aux.qt_idxs))
 end
 
 
@@ -64,7 +44,7 @@ end
 
 function rw_block_inc!(aux::UniformAux, p::UniformProtocol,
                        t::Gen.Trace, node, alpha)
-    aux.qt_idxs[node] += -0.5
+    aux.qt_idxs[node] = logsumexp(aux.qt_idxs[node], 0.0)
     aux.steps += 1
     return nothing
 end
@@ -72,7 +52,6 @@ end
 function rw_block_accept!(aux::UniformAux, p::UniformProtocol,
                           t::Gen.Trace, node)
     aux.accepts += 1
-    aux.qt_idxs[node] += 1.0
     return nothing
 end
 
@@ -92,7 +71,6 @@ end
 function sm_block_accept!(aux::UniformAux,
                           node, move)
     aux.accepts += 1
-    aux.qt_idxs[node] += 0.2
     update_queue!(aux.qt_idxs, node, move)
     return nothing
 end

@@ -9,15 +9,12 @@ from slurmpy import sbatch
 script = 'bash {0!s}/env.d/run.sh ' + \
         '/project/scripts/experiments/quad_tree/run.sh'
 
-def att_tasks(args):
+def create_tasks(args):
     tasks = []
-    for scene in [1,2,3,4,5,6]:
-    # for scene in [3]:
-        # base scene
-        tasks.append((scene, args.chains))
-        # # shifted scene
-        # tasks.append((f"--move {r.move}", f"--furniture {r.furniture}",
-        #                 r['id'], r['door'], args.chains, 'A'))
+    for att in ["ac", "un"]:
+        for gran in ["fixed", "multi"]:
+            for scene in [1,2,3,4,5,6]:
+                tasks.append((att, gran, scene, args.chains))
     return (tasks, [], [])
     
 def main():
@@ -25,24 +22,14 @@ def main():
         description = 'Submits batch jobs for Exp1',
         formatter_class = argparse.ArgumentDefaultsHelpFormatter
     )
-
-    parser.add_argument('--scenes', type = str,
-                        default = 'ccn_2023_exp',
-                        help = 'number of scenes') ,
     parser.add_argument('--chains', type = int, default = 30,
                         help = 'number of chains')
-    parser.add_argument('--duration', type = int, default = 20,
+    parser.add_argument('--duration', type = int, default = 15,
                         help = 'job duration (min)')
 
-
-
     args = parser.parse_args()
-    # df_path = f"/spaths/datasets/{args.scenes}/scenes.csv"
-    # df = pd.read_csv(df_path)
 
-    tasks, kwargs, extras = att_tasks(args)
-    # run one job first to test and profile
-    # tasks = tasks[:args.chains]
+    tasks, kwargs, extras = create_tasks(args)
 
     interpreter = '#!/bin/bash'
     slurm_out = os.path.join(os.getcwd(), 'env.d/spaths/slurm')
@@ -50,7 +37,7 @@ def main():
         'cpus-per-task' : '1',
         'mem-per-cpu' : '8GB',
         'time' : '{0:d}'.format(args.duration),
-        'partition' : 'psych_gpu',
+        'partition' : 'psych_scavenge',
         'gres' : 'gpu:1',
         'requeue' : None,
         'job-name' : 'rooms',

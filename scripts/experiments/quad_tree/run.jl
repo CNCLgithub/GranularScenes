@@ -5,17 +5,23 @@ using Rooms
 using FileIO
 # using Random
 using ArgParse
+using Accessors
 using Gen_Compose
 using GranularScenes
 using Gen: get_retval
 using LinearAlgebra: lmul!
 
-dataset = "path_block_2024-03-14"
 
 function parse_commandline(c)
     s = ArgParseSettings()
 
     @add_arg_table! s begin
+
+        "--dataset"
+        help = "Trial dataset"
+        arg_type = String
+        default = "path_block_2024-03-14"
+
         "--gm"
         help = "Generative Model params"
         arg_type = String
@@ -24,7 +30,7 @@ function parse_commandline(c)
         "--proc"
         help = "Inference procedure params"
         arg_type = String
-        default = "$(@__DIR__)/proc.json"
+        default = "$(@__DIR__)/procedure.json"
 
         "--ddp"
         help = "DDP config"
@@ -35,19 +41,17 @@ function parse_commandline(c)
         help = "Whether to resume inference"
         action = :store_true
 
-        "--viz", "-v"
-        help = "Whether to render masks"
-        action = :store_true
-
-        "--move", "-m"
-        help = "Which scene to run"
+        "attention"
+        help = "What attention protocol to use"
         arg_type = Symbol
-        required = false
+        range_tester = x -> x == :ac || x == :un
+        default = :ac
 
-        "--furniture", "-f"
-        help = "Which scene to run"
-        arg_type = Int64
-        required = false
+        "granularity"
+        help = "What granularity schema to use"
+        arg_type = Symbol
+        range_tester = x -> x == :fixed || x == :multi
+        default = :multi
 
         "scene"
         help = "Which scene to run"
@@ -57,7 +61,7 @@ function parse_commandline(c)
         "chain"
         help = "The number of chains to run"
         arg_type = Int
-        default = 5
+        default = 1
 
     end
 
@@ -113,15 +117,9 @@ function marginalize(bfr, key)
     lmul!(1.0 / n, marginal)
 end
 
-function test(marginal, query, out)
-    model_params = first(query.args)
-    p = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
-                      protocol = AdaptiveComputation(),
-                      ddp = generate_cm_from_ppd,
-                      ddp_args = (marginal,
-                                  model_params,
-                                  0.0175),
-                      samples = 10)
+function test(marginal, proc, query, out)
+    _..., mp, var = proc.ddp_args
+    p = setproperties(proc; ddp_args = (marginal, mp, var))
     dlog = JLD2Logger(p.samples, out)
     run_chain(p, query, p.samples + 1, dlog)
     return nothing
@@ -130,7 +128,10 @@ end
 
 function main(c=ARGS)
     args = parse_commandline(c)
+
+    dataset = args["dataset"]
     base_path = "/spaths/datasets/$(dataset)/scenes"
+
     scene = args["scene"]
 
     println("Running inference on scene $(scene)")
@@ -139,7 +140,11 @@ function main(c=ARGS)
     manifest = CSV.File(base_path * ".csv")
     tile = manifest[:tidx][scene]
 
-    model = "ac"
+
+    attention = args["attention"]
+    granularity = args["granularity"]
+
+    model = "$(attention)_$(granularity)"
 
     for door = [1, 2]
         out_path = "/spaths/experiments/$(dataset)_$(model)/$(scene)_$(door)"
@@ -158,8 +163,33 @@ function main(c=ARGS)
         train_query = query_from_params(train_room, gm_params)
         test_query = query_from_params(test_room, gm_params)
 
-        proc = AdaptiveMH(;read_json("$(@__DIR__)/attention.json")...,
-                          protocol = AdaptiveComputation())
+        train_proc_kwargs = read_json(args["proc"])
+        test_proc_kwargs = deepcopy(train_proc_kwargs)
+        test_proc_kwargs[:samples] = 10
+
+        protocol = attention == :ac ?
+            AdaptiveComputation() : UniformProtocol()
+        train_proc_kwargs[:protocol] =
+            test_proc_kwargs[:protocol] = protocol
+
+
+        if granularity == :fixed
+            train_proc_kwargs[:ddp] = fixed_granularity_cm
+            train_proc_kwargs[:ddp_args] = (gm_params, 5) # HACK: hard coded
+            test_proc_kwargs[:ddp] = generate_cm_from_ppd
+            test_proc_kwargs[:ddp_args] = (gm_params,
+                                           0.0) # 0 var forces max split
+            # No split-merge moves
+            train_proc_kwargs[:sm_budget] =
+                test_proc_kwargs[:sm_budget] = 0
+        else
+            test_proc_kwargs[:ddp] = generate_cm_from_ppd
+            test_proc_kwargs[:ddp_args] = (gm_params,
+                                           0.0175)
+        end
+        train_proc = AdaptiveMH(; train_proc_kwargs...)
+        test_proc = AdaptiveMH(; test_proc_kwargs...)
+
         try
             isdir("/spaths/experiments/$(dataset)_$(model)") ||
                 mkpath("/spaths/experiments/$(dataset)_$(model)")
@@ -187,9 +217,9 @@ function main(c=ARGS)
             end
             if !complete
                 println("Starting chain $c")
-                trained = train(proc, train_query, c1_out)
-                test(trained, test_query, c2_out)
-                test(trained, train_query, c3_out)
+                trained = train(train_proc, train_query, c1_out)
+                test(trained, test_proc, test_query, c2_out)
+                test(trained, test_proc, train_query, c3_out)
             end
             println("Chain $(c) complete")
         end
