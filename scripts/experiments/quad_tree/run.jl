@@ -37,6 +37,10 @@ function parse_commandline(c)
         arg_type = String
         default = "/project/scripts/nn/configs/og_decoder.yaml"
 
+        "--reverse", "-f"
+        help = "Infer image 2 then image 1"
+        action = :store_true
+
         "--restart", "-r"
         help = "Whether to resume inference"
         action = :store_true
@@ -148,6 +152,9 @@ function main(c=ARGS)
 
     for door = [1, 2]
         out_path = "/spaths/experiments/$(dataset)_$(model)/$(scene)_$(door)"
+        if args["reverse"]
+            out_path *= "_reversed"
+        end
 
         base_p = joinpath(base_path, "$(scene)_$(door).json")
         train_room = load_scene(base_p)
