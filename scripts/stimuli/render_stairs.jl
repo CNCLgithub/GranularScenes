@@ -4,18 +4,17 @@ using Rooms
 using FileIO
 using ArgParse
 using DataFrames
+using GranularScenes: add
 
 blender_args = Dict(
-    :mode => "full",
-    # :mode => "none",
-    :template => "/spaths/datasets/vss_template.blend",
-    :script => "$(@__DIR__)/render.py"
+    :template => "$(@__DIR__)/stair_template.blend",
+    :script => "$(@__DIR__)/render.py",
+    :blender => "/spaths/bin/blender-4.2.0-linux-x64/blender"
 )
 
 function render_stims(df::DataFrame, name::String)
-    out = "/spaths/datasets/$(name)/render_cycles"
+    out = "/spaths/datasets/$(name)/render_stairs"
     isdir(out) || mkdir(out)
-    renderer = Blender(;blender_args...)
     for r in eachrow(df), door = 1:2
         base_p = "/spaths/datasets/$(name)/scenes/$(r.scene)_$(door).json"
         local base_s
@@ -24,6 +23,8 @@ function render_stims(df::DataFrame, name::String)
         end
         base = from_json(GridRoom, base_s)
         p = "$(out)/$(r.scene)_$(door)"
+        renderer = Blender(;blender_args...,
+                           mode = door == 1 ? "noflip" : "flip")
         Rooms.render(renderer, base, p)
         blocked = add(base, Set{Int64}(r.tidx))
         p = "$(out)/$(r.scene)_$(door)_blocked"
@@ -32,7 +33,7 @@ function render_stims(df::DataFrame, name::String)
 end
 
 function main()
-    cmd = ["path_block_2024-03-14", "1"]
+    cmd = ["path_block_2024-03-14", "0"]
     args = parse_commandline(;x=cmd)
 
     name = args["dataset"]

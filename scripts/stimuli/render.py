@@ -21,47 +21,25 @@ class Scene:
     Defines the ramp world in bpy.
     """
 
-    def __init__(self, scene, theta = None):
+    def __init__(self, scene, flip = False):
         """ Initializes objects, physics, and camera
 
         :param scene: Describes the ramp, table, and balls.
         :type scene_d: dict
-        :param trace: the physical state of the objects
-        :type trace: dict or None
-        :param theta: Angle around the world to point the camera
-        :type theta: float or None
+        :param flip: Whether to flip the template along the y-axis
+        :type theta: bool
         """
-        # Initialize attributes
-        self.theta = theta
+        if flip:
+            for obj in bpy.data.objects:
+                obj.location[0] *= -1
 
-        # Parse scene structure
-        self.load_scene(scene)
+        bpy.context.view_layer.update()
+
+        # Load obstacles
+        self.load_obstacles(scene)
         print('Loaded scene')
         sys.stdout.flush()
 
-    @property
-    def trace(self):
-        return self._trace
-
-    @trace.setter
-    def trace(self, t):
-        """
-        A dictionary containing to keys: `('pos', 'rot')` where each
-        holds a 3-dimensional array of `TxNxK`,
-        where `T` is the number of key frames,
-        `N` is the number of objects,
-        and `K` is either `xyz` or `wxyz`.
-
-        :param t: The physics state to apply as keyframes
-        :type t: dict or None
-        """
-        if not t is None:
-            frames = len(t['pos'])
-        else:
-            frames = 1
-        bpy.context.scene.frame_set(1)
-        bpy.context.scene.frame_end = frames + 1
-        self._trace = t
 
     def select_obj(self, obj):
         """ Sets the given object into active context.
@@ -167,15 +145,7 @@ class Scene:
             mat = 'U'
             self.set_appearance(ob, mat)
 
-    def load_scene(self, scene_dict):
-        """ Configures the ramp, table, and balls
-        """
-        # Setup floor
-        self.create_obj('floor', scene_dict['floor'])
-        self.create_obj('ceiling', scene_dict['ceiling'])
-        # Camera
-        self.set_camera(scene_dict['camera'])
-        self.set_lights(scene_dict['lights'])
+    def load_obstacles(self, scene_dict):
         # Load Objects / Tiles
         obj_data = scene_dict['objects']
         obj_names = list(map(str, range(len(obj_data))))
@@ -183,55 +153,10 @@ class Scene:
         for i in range(len(obj_data)):
             name = obj_names[i]
             data = obj_data[i]
-            self.create_obj(name, data)
-
-    def set_rendering_params(self, resolution):
-        """ Configures various settings for rendering such as resolution.
-        """
-        bpy.context.scene.render.resolution_x = resolution[0]
-        bpy.context.scene.render.resolution_y = resolution[1]
-        bpy.context.scene.render.resolution_percentage = 100
-        bpy.context.scene.render.engine = 'CYCLES'
-        # bpy.context.scene.render.engine = 'BLENDER_EEVEE'
-        # bpy.context.scene.cycles.samples = 128
-        # bpy.context.scene.render.tile_x = 16
-        # bpy.context.scene.render.tile_y = 16
-
-    def set_camera(self, params):
-        """ Moves the camera along a circular path.
-
-        :param rot: Angle in radians along path.
-        :type rot: float
-        """
-        camera = bpy.data.objects['Camera']
-        camera.location = params['position']
-        self.rotate_obj(camera, params['orientation'])
-        bpy.context.view_layer.update()
-        camera.keyframe_insert(data_path='location', index = -1)
-        camera.keyframe_insert(data_path='rotation_quaternion', index = -1)
-
-    def set_lights(self, lights):
-        for (i, l) in enumerate(lights):
-
-            # cribbed from https://stackoverflow.com/a/57310198
-            name = 'light_{0:d}'.format(i)
-            # create light datablock, set attributes
-            light_data = bpy.data.lights.new(name=name, type='AREA')
-            light_data.energy = l['intensity']
-
-            # create new object with our light datablock
-            light_object = bpy.data.objects.new(name=name, object_data=light_data)
-
-            # link light object
-            bpy.context.collection.objects.link(light_object)
-
-            # make it active
-            bpy.context.view_layer.objects.active = light_object
-
-            #change location
-            light_object.location = l['position']
-            self.rotate_obj(light_object, l['orientation'])
-            bpy.context.view_layer.update()
+            mat = data['appearance']
+            # only create obstacles
+            if mat == "blue":
+                self.create_obj(name, data)
 
 
     def render(self, output_name, resolution , camera_rot = None):
@@ -249,8 +174,6 @@ class Scene:
         :type camera_rot: float
 
         """
-        if not (resolution is None):
-            self.set_rendering_params(resolution)
 
         if os.path.isfile(output_name):
             print('File {0!s} exists'.format(output_name))
@@ -320,15 +243,11 @@ def parser(args):
                    help = 'json serialized string describing the scene.')
     p.add_argument('--out', type = str,
                    help = 'Path to save rendering')
-    p.add_argument('--save_world', action = 'store_true',
-                   help = 'Save the resulting blend scene')
-    p.add_argument('--mode', type = str, default = 'none',
-                   choices = ['full', 'none'],
+    p.add_argument('--mode', type = str, default = 'noflip',
+                   choices = ['noflip', 'flip'],
                    help = 'mode to render')
     p.add_argument('--resolution', type = int, nargs = 2,
                    help = 'Render resolution')
-    p.add_argument('--gpu', action = 'store_true',
-                   help = 'Use CUDA rendering')
     return p.parse_args(args)
 
 def load_data(path):
@@ -344,20 +263,16 @@ def main():
         argv = sys.argv[sys.argv.index('--') + 1:]
     args = parser(argv)
 
-    scene = Scene(args.scene)
-
-    if args.gpu:
-        print('Using gpu')
-        bpy.context.scene.cycles.device = 'GPU'
 
     path = os.path.join(args.out, 'render')
     if not os.path.isdir(path):
         os.mkdir(path)
 
 
-    if args.mode == 'full':
-        p = args.out + '.png'
-        scene.render(p, resolution = args.resolution,)
+    scene = Scene(args.scene, flip = args.mode == 'flip')
+
+    p = args.out + '.png'
+    scene.render(p, resolution = args.resolution,)
     # if args.save_world:
     path = os.path.join(args.out, 'world.blend')
     scene.save(path)

@@ -22,9 +22,12 @@ from: nvidia/cuda:11.7.1-cudnn8-devel-ubuntu22.04
                        python3-pip \
                        libopencv-dev \
                        libturbojpeg0-dev \
-                       vulkan-tools \
-                       blender
+                       vulkan-tools
     apt-get clean
+
+    add-apt-repository ppa:thomas-schiex/blender
+    apt update
+    apt install blender
 
     python3 -m pip install --upgrade pip
     python3 -m pip install pipenv virtualenv
