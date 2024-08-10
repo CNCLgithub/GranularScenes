@@ -20,10 +20,10 @@ function room_from_wave(wave, bounds, start, dest)
     fill!(d, floor_tile)
 
     # add walls
-    d[:, 1] .= wall_tile
-    d[:, end] .= wall_tile
-    d[1, :] .= wall_tile
-    d[end, :] .= wall_tile
+    # d[:, 1] .= wall_tile
+    # d[:, end] .= wall_tile
+    # d[1, :] .= wall_tile
+    # d[end, :] .= wall_tile
 
     # set entrances and exits
     # these are technically floors but are along the border
@@ -40,57 +40,77 @@ function room_from_wave(wave, bounds, start, dest)
     GridRoom(steps, (32.0, 32.0), [start], [dest], g, d)
 end
 
-const HT3D = SMatrix{3, 3, Bool}
+const HT4D = SMatrix{4, 4, Bool}
 
-ht3d_elems = HT3D[
-    HT3D([0 0 0;
-          0 0 0;
-          0 0 0]), # 1
-    HT3D([0 1 0;
-          0 1 0;
-          0 1 0]), # 2
-    HT3D([0 0 0;
-          1 1 1;
-          0 0 0]), # 3
-    HT3D([0 1 0;
-          1 1 1;
-          0 0 0]), # 4
-    HT3D([0 0 0;
-          1 1 1;
-          0 1 0]), # 5
-    HT3D([0 1 0;
-          1 1 0;
-          0 1 0]), # 6
-    HT3D([0 1 0;
-          0 1 1;
-          0 1 0]), # 7
-    HT3D([0 1 0;
-          1 1 0;
-          0 0 0]), # 8
-    HT3D([0 1 0;
-          0 1 1;
-          0 0 0]), # 9
-    HT3D([0 0 0;
-          0 1 1;
-          0 1 0]), # 10
-    HT3D([0 0 0;
-          1 1 0;
-          0 1 0]), # 11
-    HT3D([0 1 0;
-          1 1 1;
-          0 1 0]), # 12
-    HT3D([0 0 0;
-          0 1 1;
-          0 0 0]), # 13
-    HT3D([0 0 0;
-          1 1 0;
-          0 0 0]), # 14
-    HT3D([0 0 0;
-          0 1 0;
-          0 1 0]), # 15
-    HT3D([0 1 0;
-          0 1 0;
-          0 0 0]), # 16
+ht4d_elems = HT4D[
+    HT4D([0 0 0 0;
+          0 0 0 0;
+          0 0 0 0;
+          0 0 0 0]), # 1
+    HT4D([0 1 1 0;
+          0 1 1 0;
+          0 1 1 0;
+          0 1 1 0]), # 2
+    HT4D([0 0 0 0;
+          1 1 1 1;
+          1 1 1 1;
+          0 0 0 0]), # 3
+    HT4D([0 1 1 0;
+          1 1 1 1;
+          1 1 1 1;
+          0 0 0 0]), # 4
+    HT4D([0 0 0 0;
+          1 1 1 1;
+          1 1 1 1;
+          0 1 1 0]), # 5
+    HT4D([0 1 1 0;
+          1 1 1 0;
+          1 1 1 0;
+          0 1 1 0]), # 6
+    HT4D([0 1 1 0;
+          0 1 1 1;
+          0 1 1 1;
+          0 1 1 0]), # 7
+    HT4D([0 1 1 0;
+          1 1 1 0;
+          1 1 1 0;
+          0 0 0 0]), # 8
+    HT4D([0 1 1 0;
+          0 1 1 1;
+          0 1 1 1;
+          0 0 0 0]), # 9
+    HT4D([0 0 0 0;
+          0 1 1 1;
+          0 1 1 1;
+          0 1 1 0]), # 10
+    HT4D([0 0 0 0;
+          1 1 1 0;
+          1 1 1 0;
+          0 1 1 0]), # 11
+    HT4D([0 1 1 0;
+          1 1 1 1;
+          1 1 1 1;
+          0 1 1 0]), # 12
+    HT4D([0 0 0 0;
+          0 1 1 1;
+          0 1 1 1;
+          0 0 0 0]), # 13
+    HT4D([0 0 0 0;
+          1 1 1 0;
+          1 1 1 0;
+          0 0 0 0]), # 14
+    HT4D([0 0 0 0;
+          0 1 1 0;
+          0 1 1 0;
+          0 1 1 0]), # 15
+    HT4D([0 1 1 0;
+          0 1 1 0;
+          0 1 1 0;
+          0 0 0 0]), # 16
+    HT4D([1 1 1 1;
+          1 1 1 1;
+          1 1 1 1;
+          1 1 1 1]), # 17
 ]
 
 function dist(x::CartesianIndex{2}, y::CartesianIndex{2})
@@ -214,9 +234,15 @@ function sample_pair(n::Int,
     sample_path!(template, left_path, start_from, left_door, path_temp, WFC.Above)
     display(template)
 
+    # for i = findall(==(0), template)
+    #     template[i] = 17
+    # end
+    # display(template)
+
     # Apply WFC to populate the rest of the room
     sp = GridSpace(length(template), size(template))
-    ts = TileSet(ht3d_elems, sp)
+    ts = TileSet(ht4d_elems, sp)
+    # ws = WaveState(zeros(size(template)), zeros(length(template)), template, length(template))
     ws = WaveState(template, sp, ts)
     @time collapse!(ws, sp, ts)
     display(ws.wave)
@@ -225,9 +251,11 @@ function sample_pair(n::Int,
     @show size(wave)
 
     # create rooms
-    right_room = room_from_wave(wave, (n, n), start * 3 - 1, right_door * 3 - 1 + (n * 3 * (n * 3 - n)))
+    right_room = room_from_wave(wave, (n, n), start * 4 - 1,
+                                right_door * 4 - 1 + (n * 4 * (n * 4 - n)))
     display(right_room)
-    left_room = room_from_wave(wave, (n, n), start * 3 - 1, right_door * 3 - 1  + (n * 3 * (n * 3 - n)))
+    left_room = room_from_wave(wave, (n, n), start * 4 - 1,
+                               right_door * 4 - 1  + (n * 4 * (n * 4 - n)))
     display(left_room)
 
     (left_room, left_path, right_room, right_path)
@@ -297,10 +325,10 @@ function main()
 
 
     # Parameters
-    room_steps = (7, 7)
+    room_steps = (8, 8)
     room_bounds = (32., 32.)
     entrance = [4]
-    door_rows = [2, 6]
+    door_rows = [2, 7]
     inds = LinearIndices(room_steps)
     doors = inds[door_rows, room_steps[2]]
 
