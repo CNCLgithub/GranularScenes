@@ -4,16 +4,16 @@ using Rooms
 using FileIO
 using ArgParse
 using DataFrames
-using GranularScenes: add, display_mat
+using GranularScenes: add
 
 blender_args = Dict(
-    :template => "$(@__DIR__)/stair_template.blend",
-    :script => "$(@__DIR__)/render_stairs.py",
+    :template => "$(@__DIR__)/vss_template.blend",
+    # :script => "$(@__DIR__)/render.py",
     :blender => "/spaths/bin/blender-4.2.0-linux-x64/blender"
 )
 
 function render_stims(df::DataFrame, name::String)
-    out = "/spaths/datasets/$(name)/render_stairs"
+    out = "/spaths/datasets/$(name)/render_classic"
     isdir(out) || mkdir(out)
     for r in eachrow(df), door = 1:2
         base_p = "/spaths/datasets/$(name)/scenes/$(r.scene)_$(door).json"
@@ -23,9 +23,7 @@ function render_stims(df::DataFrame, name::String)
         end
         base = from_json(GridRoom, base_s)
         p = "$(out)/$(r.scene)_$(door)"
-        display_mat(Float64.(data(base) .== floor_tile))
-        renderer = Blender(;blender_args...,
-                           mode = door == 1 ? "noflip" : "flip")
+        renderer = Blender(;blender_args...)
         Rooms.render(renderer, base, p)
         blocked = add(base, Set{Int64}(r.tidx))
         p = "$(out)/$(r.scene)_$(door)_blocked"
