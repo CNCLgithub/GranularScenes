@@ -27,14 +27,14 @@ function render_stims(df::DataFrame, name::String)
         renderer = Blender(;blender_args...,
                            mode = door == 1 ? "noflip" : "flip")
         Rooms.render(renderer, base, p)
-        blocked = add(base, Set{Int64}(r.tidx))
-        p = "$(out)/$(r.scene)_$(door)_blocked"
-        Rooms.render(renderer, blocked, p)
+        # blocked = add(base, Set{Int64}(r.tidx))
+        # p = "$(out)/$(r.scene)_$(door)_blocked"
+        # Rooms.render(renderer, blocked, p)
     end
 end
 
 function main()
-    cmd = ["path_block_maze_2024-08-09", "2"]
+    cmd = ["path_block_maze_2024-08-10", "1"]
     args = parse_commandline(;x=cmd)
 
     name = args["dataset"]

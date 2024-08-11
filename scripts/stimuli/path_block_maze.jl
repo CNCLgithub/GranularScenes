@@ -158,9 +158,9 @@ end
 function sample_path(n::Int, start::Int, dest::Int, temp::Float64 = 1)
     m = zeros(Int64, (n, n))
     # m[:, 1] .= 1 # don't set near entrance
-    # m[start] = 0
+    m[start] = 3
     path = Int64[]
-    sample_path!(m, path, start, dest, temp)
+    sample_path!(m, path, start + n, dest, temp)
     return (m, path)
 end
 
@@ -325,10 +325,10 @@ function main()
 
 
     # Parameters
-    room_steps = (8, 8)
+    room_steps = (7, 7)
     room_bounds = (32., 32.)
     entrance = [4]
-    door_rows = [2, 7]
+    door_rows = [2, 6]
     inds = LinearIndices(room_steps)
     doors = inds[door_rows, room_steps[2]]
 
@@ -336,8 +336,6 @@ function main()
     n = 6
 
     # empty room with doors
-    left_cond = empty_room(room_steps, room_bounds, entrance, [doors[1]])
-    right_cond = empty_room(room_steps, room_bounds, entrance, [doors[2]])
 
     # will store summary of generated rooms here
     df = DataFrame(scene = Int64[],

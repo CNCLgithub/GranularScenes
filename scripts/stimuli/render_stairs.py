@@ -31,7 +31,8 @@ class Scene:
         """
         if flip:
             for obj in bpy.data.objects:
-                obj.location[0] *= -1
+                if obj.name != 'Camera':
+                    obj.location[0] *= -1
 
         bpy.context.view_layer.update()
 
@@ -105,7 +106,9 @@ class Scene:
             ob = bpy.context.object
             self.scale_obj(ob, object_d['dims'])
         elif object_d['shape'] == 'Block':
-            bpy.ops.mesh.primitive_cube_add(location=object_d['position'],
+            loc = object_d['position']
+            loc[2] += -0.35
+            bpy.ops.mesh.primitive_cube_add(location=loc,
                                             enter_editmode=False,)
             ob = bpy.context.object
             self.scale_obj(ob, object_d['dims'])
@@ -151,7 +154,7 @@ class Scene:
         obj_names = list(map(str, range(len(obj_data))))
         self.obj_names = obj_names
         for i in range(len(obj_data)):
-            name = obj_names[i]
+            name = f'block_{obj_names[i]}'
             data = obj_data[i]
             mat = data['appearance']
             # only create obstacles
