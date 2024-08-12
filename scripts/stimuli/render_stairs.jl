@@ -12,29 +12,33 @@ blender_args = Dict(
     :blender => "/spaths/bin/blender-4.2.0-linux-x64/blender"
 )
 
+function load_scene(path::String)
+    local base_s
+    open(path, "r") do f
+        base_s = JSON.parse(f)
+    end
+    from_json(GridRoom, base_s)
+end
+
 function render_stims(df::DataFrame, name::String)
     out = "/spaths/datasets/$(name)/render_stairs"
     isdir(out) || mkdir(out)
     for r in eachrow(df), door = 1:2
-        base_p = "/spaths/datasets/$(name)/scenes/$(r.scene)_$(door).json"
-        local base_s
-        open(base_p, "r") do f
-            base_s = JSON.parse(f)
-        end
-        base = from_json(GridRoom, base_s)
+        base = load_scene("/spaths/datasets/$(name)/scenes/$(r.scene)_$(door).json")
         p = "$(out)/$(r.scene)_$(door)"
         display_mat(Float64.(data(base) .== floor_tile))
         renderer = Blender(;blender_args...,
                            mode = door == 1 ? "noflip" : "flip")
         Rooms.render(renderer, base, p)
-        # blocked = add(base, Set{Int64}(r.tidx))
-        # p = "$(out)/$(r.scene)_$(door)_blocked"
-        # Rooms.render(renderer, blocked, p)
+
+        blocked = load_scene("/spaths/datasets/$(name)/scenes/$(r.scene)_$(door)_blocked.json")
+        p = "$(out)/$(r.scene)_$(door)_blocked"
+        Rooms.render(renderer, blocked, p)
     end
 end
 
 function main()
-    cmd = ["path_block_maze_2024-08-10", "1"]
+    cmd = ["path_block_maze_2024-08-11", "0"]
     args = parse_commandline(;x=cmd)
 
     name = args["dataset"]
