@@ -14,7 +14,7 @@ using WaveFunctionCollapse
 import WaveFunctionCollapse as WFC
 
 function viz_room(room)
-    display_mat(Float64.(data(room) .== floor_tile))
+    GranularScenes.display_mat(Float64.(data(room) .== floor_tile))
     return nothing
 end
 
@@ -105,6 +105,10 @@ ht4d_elems = HT4D[
           1 1 1 1;
           1 1 1 1;
           1 1 1 1]), # 17
+    HT4D([0 0 0 0;
+          1 1 0 0;
+          1 1 0 0;
+          0 0 0 0]), # 18
 ]
 
 function dist(x::CartesianIndex{2}, y::CartesianIndex{2})
@@ -181,13 +185,7 @@ function sample_path!(m::Matrix{Int64}, path::Vector{Int64},
             d < cur_dis || continue
             ws[i] = -d
         end
-        # @show current
-        # @show ns
-        # @show ws
         _ws = WFC.softmax(ws, temp)
-        # @show _ws
-        # @show argmax(ws)
-        # @show argmax(_ws)
         if all(isinf, ws)
             display(m)
             error()
@@ -230,32 +228,44 @@ function sample_pair(n::Int,
     # Apply WFC to populate the rest of the room
     wave = WaveState(template, sp, ts)
     collapse!(wave, sp, ts)
-    (wave, left_path, right_path)
+    (wave, left_path, right_path, step_number)
 end
 
-function eval_pair(left_path::Vector{Int64},
-                   right_path::Vector{Int64})
+function eval_pair(wave::WaveState,
+                   left_path::Vector{Int64},
+                   right_path::Vector{Int64},
+                   cut::Int)
+    nl = length(left_path)
+    nr = length(right_path)
     # Not a valid sample if:
     #     (1) Missing path for either door
-    ((isempty(left_path) || isempty(right_path)) ||
-        # (2) Left and Right paths overlap too much
-        length(intersect(left_path, right_path)) > 7 ||
-        # (3) One path is much longer than the other
-        abs(length(right_path) - length(left_path)) > 3) &&
+    #     (2) Left and Right paths overlap too much
+    #     (3) One path is much longer than the other
+    (nl == 0 ||
+        nr == 0 ||
+        nr - cut < 4 ||
+        count(==(3), wave.wave[right_path[1:cut + 2]]) > 3 ||
+        abs(nl - nr) > 3) &&
         return 0
 
+    # @show count(==(3), wave.wave[right_path[1:4]])
     # Where to place obstacle that blocks the right path
-    right_not_left = setdiff(right_path, left_path)
-    # Avoid paths that are too short to block
-    length(right_not_left) < 3 && return tile
-    htile_idx = rand(right_not_left[1:(end-2)])
+    # right_not_left = right_path[cut + 1:end]
+    # @show length(right_not_left)
+    # # Avoid paths that are too short to block
+    # length(right_not_left) < 4 && return 0
+    htile_idx = rand(right_path[(cut + 1):(end-2)])
 end
 
 
 
 function main()
-    name = "path_block_maze_$(Dates.today())"
-    dataset_out = "/spaths/datasets/$(name)"
+    name = "path_block_maze"
+    dataset_base = "/spaths/datasets/$(name)"
+    isdir(dataset_base) || mkdir(dataset_base)
+    dataset_out = mktempdir(dataset_base;
+                            prefix = "$(Dates.today())_",
+                            cleanup = false)
     isdir(dataset_out) || mkdir(dataset_out)
 
     scenes_out = "$(dataset_out)/scenes"
@@ -276,7 +286,7 @@ function main()
     ts = TileSet(ht4d_elems, sp)
 
     # number of trials
-    ntrials = 6
+    ntrials = 12
 
     # will store summary of generated rooms here
     df = DataFrame(scene = Int64[],
@@ -287,11 +297,11 @@ function main()
     c = 0 # number of attempts;
     while i <= ntrials && c < 1000 * ntrials
         # generate a room pair
-        (wave, lpath, rpath) = sample_pair(room_steps[1], entrance[1],
-                                           doors[1], doors[2],
-                                           sp, ts)
+        (wave, lpath, rpath, cut) = sample_pair(room_steps[1], entrance[1],
+                                                doors[1], doors[2],
+                                                sp, ts)
 
-        tile = eval_pair(lpath, rpath)
+        tile = eval_pair(wave, lpath, rpath, cut)
         # no valid pair generated, try again or finish
         c += 1
         tile == 0 && continue
@@ -314,7 +324,7 @@ function main()
                                        # HACK: lol no idea have this works
                                        right_door * 4 - 1 + (n * 4 * (n * 4 - n)))
 
-        viz_room(right)
+        # viz_room(right)
         viz_room(blocked_right)
         # save
         toflip = (i-1) % 2
@@ -337,6 +347,8 @@ function main()
     @show df
     # saving summary / manifest
     CSV.write("$(scenes_out).csv", df)
+    println("Created $(i-1) scenes in $(c) attempts")
+    println("Finished writing dataset to $(dataset_out)")
     return nothing
 end
 

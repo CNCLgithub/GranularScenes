@@ -29,8 +29,6 @@ def main():
             print(row)
             scene = int(row[0])
             flipx = row[1] == 'true'
-            print(type(scene))
-            print(type(flipx))
             for door in [1, 2]:
                 # first create each `a->a` trial
                 a = '{0:d}_{1:d}.png'.format(scene, door)
