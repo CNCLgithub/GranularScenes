@@ -157,7 +157,7 @@ function sample_path(n::Int, start::Int, dest::Int, temp::Float64 = 1)
     m = zeros(Int64, (n, n))
     # m[:, 1] .= 1 # don't set near entrance
     m[start] = 3
-    path = Int64[]
+    path = Int64[start]
     sample_path!(m, path, start + n, dest, temp)
     return (m, path)
 end
@@ -199,7 +199,6 @@ function sample_path!(m::Matrix{Int64}, path::Vector{Int64},
         temp *= 0.95
     end
     add_segment!(m, current, WFC.Right, dir)
-    push!(path, dest)
     return nothing
 end
 
@@ -219,7 +218,7 @@ function sample_pair(n::Int,
     # sample path for left door
     #     - branch from right path, at random point
     #     - but not too close to entrance
-    start_from = rand(findall(==(3), vec(template))[2:end-3])
+    start_from = rand(findall(==(3), vec(template))[3:end-2])
     step_number = findfirst(==(start_from), right_path)
     template[start_from] = 4 # update to connector
     left_path = deepcopy(right_path[1:step_number])
@@ -237,6 +236,7 @@ function eval_pair(wave::WaveState,
                    cut::Int)
     nl = length(left_path)
     nr = length(right_path)
+    left_tiles = count(==(3), wave.wave[right_path[1:cut+2]])
     # Not a valid sample if:
     #     (1) Missing path for either door
     #     (2) Left and Right paths overlap too much
@@ -244,17 +244,12 @@ function eval_pair(wave::WaveState,
     (nl == 0 ||
         nr == 0 ||
         nr - cut < 4 ||
-        count(==(3), wave.wave[right_path[1:cut + 2]]) > 3 ||
+        left_tiles > 2 ||
         abs(nl - nr) > 3) &&
         return 0
 
-    # @show count(==(3), wave.wave[right_path[1:4]])
     # Where to place obstacle that blocks the right path
-    # right_not_left = right_path[cut + 1:end]
-    # @show length(right_not_left)
-    # # Avoid paths that are too short to block
-    # length(right_not_left) < 4 && return 0
-    htile_idx = rand(right_path[(cut + 1):(end-2)])
+    htile_idx = rand(right_path[(cut + 2):(end-2)])
 end
 
 
@@ -282,11 +277,13 @@ function main()
     doors = (left_door, right_door) =
         inds[door_rows, room_steps[2]]
 
+    @show start
+
     sp = GridSpace(prod(room_steps), room_steps)
     ts = TileSet(ht4d_elems, sp)
 
     # number of trials
-    ntrials = 12
+    ntrials = 6
 
     # will store summary of generated rooms here
     df = DataFrame(scene = Int64[],
@@ -300,13 +297,11 @@ function main()
         (wave, lpath, rpath, cut) = sample_pair(room_steps[1], entrance[1],
                                                 doors[1], doors[2],
                                                 sp, ts)
-
         tile = eval_pair(wave, lpath, rpath, cut)
-        # no valid pair generated, try again or finish
         c += 1
+        # no valid pair generated, try again or finish
         tile == 0 && continue
         println("accepted pair!")
-
         # create rooms
         expanded = WFC.expand(wave, sp, ts)
         right = room_from_wave(expanded, (n, n), start * 4 - 1,
