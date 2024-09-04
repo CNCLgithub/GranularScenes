@@ -7,15 +7,14 @@ using DataFrames
 using GranularScenes: add
 
 blender_args = Dict(
-    :template => "$(@__DIR__)/vss_template.blend",
-    :script => "$(@__DIR__)/render_classic.py",
+    :template => "$(@__DIR__)/closed_door.blend",
+    :script => "$(@__DIR__)/render_closed_door.py",
     :blender => "/spaths/bin/blender-4.2.0-linux-x64/blender",
-    :mode => "full",
     :resolution => (720, 480),
 )
 
 function render_stims(df::DataFrame, name::String)
-    out = "/spaths/datasets/$(name)/render_classic"
+    out = "/spaths/datasets/$(name)/render_closed_door"
     isdir(out) || mkdir(out)
     for r in eachrow(df), door = 1:2
         base_p = "/spaths/datasets/$(name)/scenes/$(r.scene)_$(door).json"
@@ -25,7 +24,8 @@ function render_stims(df::DataFrame, name::String)
         end
         base = from_json(GridRoom, base_s)
         p = "$(out)/$(r.scene)_$(door)"
-        renderer = Blender(;blender_args...)
+        renderer = Blender(;blender_args...,
+                           mode = door == 1 ? "noflip" : "flip")
         Rooms.render(renderer, base, p)
         blocked = add(base, Set{Int64}(r.tidx))
         p = "$(out)/$(r.scene)_$(door)_blocked"
@@ -34,7 +34,7 @@ function render_stims(df::DataFrame, name::String)
 end
 
 function main()
-    cmd = ["path_block_2024-03-14", "1"]
+    cmd = ["path_block_2024-03-14", "0"]
     args = parse_commandline(;x=cmd)
 
     name = args["dataset"]
