@@ -146,7 +146,7 @@ function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
     nidx = categorical(ws)
     node = ks[nidx]
     gr = aux.queue[node]
-    if bernoulli(0.1)
+    if bernoulli(0.5)
         node = rand(keys(aux.queue))
         gr = aux.queue[node]
     end

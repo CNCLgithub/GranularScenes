@@ -38,7 +38,7 @@ function render_stims(df::DataFrame, name::String)
 end
 
 function main()
-    cmd = ["path_block_maze/2024-08-14_rBhPm2", "0"]
+    cmd = ["path_block_maze/2024-09-04_frrRvZ", "0"]
     args = parse_commandline(;x=cmd)
 
     name = args["dataset"]

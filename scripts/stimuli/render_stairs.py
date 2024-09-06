@@ -106,11 +106,11 @@ class Scene:
             ob = bpy.context.object
             self.scale_obj(ob, object_d['dims'])
         elif object_d['shape'] == 'Block':
-            loc = object_d['position']
-            loc[2] += -0.35
-            bpy.ops.mesh.primitive_cube_add(location=loc,
+            bpy.ops.mesh.primitive_cube_add(location=object_d['position'],
                                             enter_editmode=False,)
             ob = bpy.context.object
+            dims = object_d['dims']
+            dims[2] *= 1.5
             self.scale_obj(ob, object_d['dims'])
             self.rotate_obj(ob, object_d['orientation'])
         elif object_d['shape'] == 'Puck':

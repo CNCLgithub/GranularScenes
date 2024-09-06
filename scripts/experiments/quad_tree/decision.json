@@ -1,0 +1,5 @@
+{
+    "epoch_steps": 30,
+    "epochs": 20,
+    "kl_threshold": 100.0
+}

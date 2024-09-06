@@ -30,62 +30,68 @@ class SceneEmbedding(pl.LightningModule):
         return self.model(x)
 
     def loss_function(self,
-                      recons: Tensor,
                       x: Tensor,
-                      mu: Tensor,
-                      log_var: Tensor) -> dict:
-        recons_loss = F.mse_loss(recons, x)
-        kld_loss = torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1)
-        kld_loss = torch.mean(-0.5 * kld_loss, dim = 0)
+                      dist,
+                      z: Tensor,
+                      recon: Tensor,
+                      ) -> dict:
+        if x.shape[1] == 3:
+            x = x[:, 0:1, :, :]
+        recons_loss = F.mse_loss(recon, x)
+        std_normal = torch.distributions.MultivariateNormal(
+            torch.zeros_like(z, device=z.device),
+            scale_tril=torch.eye(z.shape[-1], device=z.device).unsqueeze(0).expand(z.shape[0], -1, -1),
+        )
+        kl_loss = torch.distributions.kl.kl_divergence(dist, std_normal).mean()
         # H-loss, see https://openreview.net/forum?id=Sy2fzU9gl
         loss = recons_loss + self.hparams.beta * \
-            self.hparams.kld_weight * kld_loss
-        return {'loss': loss, 'rec_loss':recons_loss, 'kld_loss':kld_loss}
+            self.hparams.kld_weight * kl_loss
+        return {'loss': loss, 'rec_loss':recons_loss, 'kld_loss':kl_loss}
 
     def training_step(self, batch, batch_idx):
         x = batch[0]
-        # x = batch[0][:, 0:1, :, :]
-        mu, log_var, y = self.forward(x)
-        l = self.loss_function(y, x, mu, log_var)
+        if x.shape[1] == 3:
+            x = x[:, 0:1, :, :]
+        d, z, r = self.forward(x)
+        l = self.loss_function(x, d, z, r)
         self.log_dict(l)
         return l['loss']
 
     def validation_step(self, batch, batch_idx):
         x = batch[0]
-        # x = batch[0][:, 0:1, :, :]
-        mu, log_var, y = self.forward(x)
-        l = self.loss_function(y, x, mu, log_var)
-        vutils.save_image(x.data,
-                          os.path.join(self.logger.log_dir ,
-                                       "reconstructions",
-                                       f"recons_{self.logger.name}_epoch_{self.current_epoch}_gt.png"),
-                          normalize=True,
-                          nrow=12)
-        # print(y.shape)
-        vutils.save_image(y.data,
+        if x.shape[1] == 3:
+            x = x[:, 0:1, :, :]
+        d, z, r = self.forward(x)
+        l = self.loss_function(x, d, z, r)
+        imgs = torch.cat((x, r))
+        vutils.save_image(imgs.data,
                           os.path.join(self.logger.log_dir ,
                                        "reconstructions",
                                        f"recons_{self.logger.name}_epoch_{self.current_epoch}.png"),
                           normalize=True,
-                          nrow=12)
+                          nrow=16)
+        # print(y.shape)
+        # vutils.save_image(r.data,
+        #                   os.path.join(self.logger.log_dir ,
+        #                                "reconstructions",
+        #                                f"recons_{self.logger.name}_epoch_{self.current_epoch}.png"),
+        #                   normalize=True,
+        #                   nrow=12)
         self.log_dict({f"val_{key}": val.item()
                        for key, val in l.items()})
         self.sample_images()
 
 
     def sample_images(self):
-        samples = self.model.sample(25,
-                                    self.device)
-
+        samples = self.model.sample(16, self.device)
         vutils.save_image(samples.cpu().data,
-                        os.path.join(self.logger.log_dir ,
-                                        "samples",
-                                        f"{self.logger.name}_epoch_{self.current_epoch}.png"),
-                        normalize=True,
-                        nrow=12)
+                          os.path.join(self.logger.log_dir ,
+                                       "samples",
+                                       f"{self.logger.name}_epoch_{self.current_epoch}.png"),
+                          normalize=True,
+                          nrow=4)
 
     def configure_optimizers(self):
-
         optimizer = optim.Adam(self.model.parameters(),
                                lr=self.hparams.lr,
                                weight_decay=self.hparams.weight_decay)
@@ -134,7 +140,6 @@ class OGDecoder(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         x, og = batch
         pred_og = self.forward(x)
-        # pred_og = self.forward(x[:, 0, :, :])
         val_loss = self.loss_function(pred_og, og)
         self.log('val_loss', val_loss)
         # og_pred_img = rotate(resize(pred_og.unsqueeze(1), 256), 90).data

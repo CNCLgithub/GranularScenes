@@ -117,6 +117,9 @@ end
 
 function add_segment!(m::Matrix{Int64}, pidx::Int, cdir, pdir)
     m[pidx] == 0 || return nothing
+    if m[pidx] != 0
+        fix_template!(m, start, )
+    end
     if cdir == WFC.Above # going up
         if pdir == WFC.Above
             m[pidx] = 2
@@ -202,6 +205,34 @@ function sample_path!(m::Matrix{Int64}, path::Vector{Int64},
     return nothing
 end
 
+function compile_path(n::Int, start::Int, steps::Vector{WFC.GridRelation})
+    m = zeros(Int64, (n, n))
+    path = Int64[]
+    compile_path!(m, path, start, steps)
+    return (m, path)
+end
+
+function compile_path!(m::Matrix{Int64}, path::Vector{Int64},
+                       start::Int, steps::Vector{WFC.GridRelation},
+                       dir_prev=WFC.Right)
+    cis = CartesianIndices(m)
+    n = size(m, 1)
+    gs = GridSpace(n * n, (n, n))
+    push!(path, start)
+    current = prev = start
+    dir = dir_prev
+    for step in steps
+        dir_prev = dir
+        dir = step
+        prev = current
+        current = WFC.move(Val(step), gs, current)
+        add_segment!(m, prev, step, dir_prev)
+        push!(path, current)
+    end
+    add_segment!(m, current, WFC.Right, dir)
+    return nothing
+end
+
 function sample_pair(n::Int,
                      start::Int,
                      left_door::Int,
@@ -213,21 +244,77 @@ function sample_pair(n::Int,
                      extra_pieces::Int64 = 13,
                      piece_size::Int64 = 5)
 
-    # sample a random path for right door
-    template, right_path = sample_path(n, start, right_door, path_temp)
-    # sample path for left door
-    #     - branch from right path, at random point
-    #     - but not too close to entrance
-    start_from = rand(findall(==(3), vec(template))[3:end-2])
-    step_number = findfirst(==(start_from), right_path)
-    template[start_from] = 4 # update to connector
-    left_path = deepcopy(right_path[1:step_number])
-    sample_path!(template, left_path, start_from, left_door, path_temp, WFC.Above)
+    # # hard-coded path to left doorA
+    # left_steps = [
+    #     WFC.Right,
+    #     WFC.Right,
+    #     WFC.Above,
+    #     WFC.Above,
+    #     WFC.Right,
+    #     WFC.Right,
+    #     WFC.Right,
+    #     WFC.Right,
+    # ]
+    # template, left_path = compile_path(n, start, left_steps)
+    # display(template)
+
+    # right_path = deepcopy(left_path[1:3])
+    # start_from = right_path[end]
+    # right_steps = [
+    #     WFC.Below,
+    #     WFC.Right,
+    #     WFC.Above,
+    #     WFC.Right,
+    #     WFC.Right,
+    #     WFC.Below,
+    #     WFC.Below,
+    #     WFC.Right,
+    # ]
+
+    # compile_path!(template, right_path, start_from, right_steps)
+    # display(template)
+
+    # if left_steps[3] == WFC.Above && right_steps[1] == WFC.Below
+    #     template[left_path[3]] = 6
+    # end
+
+    # to_block = right_path[8]
+    # hard-coded path to left doorA
+    left_steps = [
+        WFC.Right,
+        WFC.Right,
+        WFC.Above,
+        WFC.Above,
+        WFC.Right,
+        WFC.Right,
+        WFC.Right,
+        WFC.Right,
+    ]
+    template, left_path = compile_path(n, start, left_steps)
+    display(template)
+
+    right_path = deepcopy(left_path[1:3])
+    start_from = right_path[end]
+    right_steps = [
+        WFC.Right,
+        WFC.Right,
+        WFC.Right,
+        WFC.Below,
+        WFC.Below,
+        WFC.Right,
+    ]
+
+    compile_path!(template, right_path, start_from, right_steps)
+    display(template)
+
+    template[left_path[3]] = 4
+
+    to_block = right_path[6]
 
     # Apply WFC to populate the rest of the room
     wave = WaveState(template, sp, ts)
     collapse!(wave, sp, ts)
-    (wave, left_path, right_path, step_number)
+    (wave, left_path, right_path, to_block)
 end
 
 function eval_pair(wave::WaveState,
@@ -277,13 +364,12 @@ function main()
     doors = (left_door, right_door) =
         inds[door_rows, room_steps[2]]
 
-    @show start
 
     sp = GridSpace(prod(room_steps), room_steps)
     ts = TileSet(ht4d_elems, sp)
 
     # number of trials
-    ntrials = 6
+    ntrials = 2
 
     # will store summary of generated rooms here
     df = DataFrame(scene = Int64[],
@@ -294,10 +380,10 @@ function main()
     c = 0 # number of attempts;
     while i <= ntrials && c < 1000 * ntrials
         # generate a room pair
-        (wave, lpath, rpath, cut) = sample_pair(room_steps[1], entrance[1],
-                                                doors[1], doors[2],
-                                                sp, ts)
-        tile = eval_pair(wave, lpath, rpath, cut)
+        (wave, lpath, rpath, tile) = sample_pair(room_steps[1], entrance[1],
+                                                 doors[1], doors[2],
+                                                 sp, ts)
+        # tile = eval_pair(wave, lpath, rpath, cut)
         c += 1
         # no valid pair generated, try again or finish
         tile == 0 && continue

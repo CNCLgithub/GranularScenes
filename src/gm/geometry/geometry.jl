@@ -166,7 +166,7 @@ function produce_weight(n::QTProdNode)::Float64
     @unpack level, max_level = n
     # level == max_level ? 0. : 0.5
     level == 1 ? 0.99 :
-        (level == max_level ? 0. : 0.5)
+        (level == max_level ? 0. : 0.35)
 end
 
 const sqrt_v = SVector{2, Float64}(fill(sqrt(2), 2))

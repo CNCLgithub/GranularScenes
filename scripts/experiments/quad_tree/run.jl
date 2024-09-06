@@ -32,6 +32,11 @@ function parse_commandline(c)
         arg_type = String
         default = "$(@__DIR__)/procedure.json"
 
+        "--decision"
+        help = "Decision procedure params"
+        arg_type = String
+        default = "$(@__DIR__)/decision.json"
+
         "--ddp"
         help = "DDP config"
         arg_type = String
@@ -60,7 +65,7 @@ function parse_commandline(c)
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 1
+        default = 2
 
         "chain"
         help = "The number of chains to run"
@@ -95,20 +100,50 @@ function block_tile(r::GridRoom, tidx::Int)
     GridRoom(r, d)
 end
 
-function train(proc, query, out)
-    dlog = JLD2Logger(50, out)
-    c = run_chain(proc, query, proc.samples, dlog)
-    println("Final step")
-    GranularScenes.viz_chain(c)
-    marginal = marginalize(buffer(dlog), :obstacles)
+function train!(c::AMHChain, log::ChainLogger,
+                steps::Int = 50)
+
+    for _ = 1:steps
+        Gen_Compose.is_finished(c) && break
+        Gen_Compose.step!(c)
+        Gen_Compose.report_step!(log, c)
+        Gen_Compose.increment!(c)
+    end
+
+    # println("After step")
+    # GranularScenes.viz_chain(c)
     # HACK: save last chunk of train chain
-    Gen_Compose.report_step!(dlog, c)
-    return marginal
+    # Gen_Compose.report_step!(log, c)
+    marginal = marginalize(buffer(log), :obstacles)
+end
+
+
+
+function test(m1::Matrix, m2::Matrix)
+    max_d = 0.0
+    c = CartesianIndex(0, 0)
+    klm = similar(m1)
+    @inbounds for i = CartesianIndices(m1)
+        d = klm[i] =  kl(m1[i], m2[i])
+        if d > max_d
+            max_d = d
+            c = i
+        end
+    end
+    lmul!(1.0 / sum(klm), klm)
+    (klm, max_d, c)
+end
+
+function kl(p::Real, q::Real)
+    p = clamp(p, 0.01, 0.99)
+    q = clamp(q, 0.01, 0.99)
+    log(1 - p) - log(1 - q) +
+        p * (log(p) + log(1-q) - log(q) - log(1 - p))
 end
 
 function marginalize(bfr, key)
     n = length(bfr)
-    @show n
+    # @show n
     @assert n > 0
     marginal = similar(bfr[1][key])
     fill!(marginal, 0.0)
@@ -119,14 +154,6 @@ function marginalize(bfr, key)
         end
     end
     lmul!(1.0 / n, marginal)
-end
-
-function test(marginal, proc, query, out)
-    _..., mp, var = proc.ddp_args
-    p = setproperties(proc; ddp_args = (marginal, mp, var))
-    dlog = JLD2Logger(p.samples, out)
-    run_chain(p, query, p.samples + 1, dlog)
-    return nothing
 end
 
 
@@ -151,51 +178,54 @@ function main(c=ARGS)
     model = "$(attention)_$(granularity)"
 
     for door = [1, 2]
-        out_path = "/spaths/experiments/$(dataset)_$(model)/$(scene)_$(door)"
+        out_path = "/spaths/experiments/flicker_$(dataset)_$(model)/$(scene)_$(door)"
         if args["reverse"]
             out_path *= "_reversed"
         end
 
         base_p = joinpath(base_path, "$(scene)_$(door).json")
-        train_room = load_scene(base_p)
-        test_room = block_tile(train_room, tile)
+        room1 = load_scene(base_p)
+        room2 = block_tile(room1, tile)
 
-        gm_params = QuadTreeModel(train_room;
+        gm_params = QuadTreeModel(room1;
                                   read_json(args["gm"])...,
                                   render_kwargs =
                                       Dict(:resolution => (256,256)))
 
         println("Saving results to: $(out_path)")
 
-        train_query = query_from_params(train_room, gm_params)
-        test_query = query_from_params(test_room, gm_params)
+        dargs = read_json(args["decision"])
 
-        train_proc_kwargs = read_json(args["proc"])
-        test_proc_kwargs = deepcopy(train_proc_kwargs)
-        test_proc_kwargs[:samples] = 10
+        q1 = query_from_params(room1, gm_params)
+        q2 = query_from_params(room2, gm_params)
+
+        proc_1_kwargs = read_json(args["proc"])
+        proc_2_kwargs = deepcopy(proc_1_kwargs)
 
         protocol = attention == :ac ?
             AdaptiveComputation() : UniformProtocol()
-        train_proc_kwargs[:protocol] =
-            test_proc_kwargs[:protocol] = protocol
+        proc_1_kwargs[:protocol] =
+            proc_2_kwargs[:protocol] = protocol
 
 
         if granularity == :fixed
-            train_proc_kwargs[:ddp] = fixed_granularity_cm
-            train_proc_kwargs[:ddp_args] = (gm_params, 5) # HACK: hard coded
-            test_proc_kwargs[:ddp] = generate_cm_from_ppd
-            test_proc_kwargs[:ddp_args] = (gm_params,
+            # TODO: Update this branch
+            proc_1_kwargs[:ddp] = fixed_granularity_cm
+            proc_1_kwargs[:ddp_args] = (gm_params, 5) # HACK: hard coded
+            proc_2_kwargs[:ddp] = generate_cm_from_ppd
+            proc_2_kwargs[:ddp_args] = (gm_params,
                                            0.0) # 0 var forces max split
             # No split-merge moves
-            train_proc_kwargs[:sm_budget] =
-                test_proc_kwargs[:sm_budget] = 0
-        else
-            test_proc_kwargs[:ddp] = generate_cm_from_ppd
-            test_proc_kwargs[:ddp_args] = (gm_params,
-                                           0.0175)
+            proc_1_kwargs[:sm_budget] =
+                proc_2_kwargs[:sm_budget] = 0
+        # REVIEW: no longer needed?
+        # else
+        #     proc_2_kwargs[:ddp] = generate_cm_from_ppd
+        #     proc_2_kwargs[:ddp_args] = (gm_params,
+        #                                    0.0175)
         end
-        train_proc = AdaptiveMH(; train_proc_kwargs...)
-        test_proc = AdaptiveMH(; test_proc_kwargs...)
+        proc_1 = AdaptiveMH(; proc_1_kwargs...)
+        proc_2 = AdaptiveMH(; proc_2_kwargs...)
 
         try
             isdir("/spaths/experiments/$(dataset)_$(model)") ||
@@ -210,8 +240,7 @@ function main(c=ARGS)
             # Random.seed!(c)
             c1_out = joinpath(out_path, "c1_$(c).jld2")
             c2_out = joinpath(out_path, "c2_$(c).jld2")
-            c3_out = joinpath(out_path, "c3_$(c).jld2")
-            outs = [c1_out, c2_out, c3_out]
+            outs = [c1_out, c2_out]
             complete = false
             if any(isfile, outs)
                 println("Record(s) found for chain: $(c)")
@@ -224,9 +253,25 @@ function main(c=ARGS)
             end
             if !complete
                 println("Starting chain $c")
-                trained = train(train_proc, train_query, c1_out)
-                test(trained, test_proc, test_query, c2_out)
-                test(trained, test_proc, train_query, c3_out)
+                chain_steps = dargs[:epoch_steps] * dargs[:epochs]
+                # log1 = JLD2Logger(dargs[:epoch_steps], c1_out)
+                # log2 = JLD2Logger(dargs[:epoch_steps], c2_out)
+                log1 = MemLogger(dargs[:epoch_steps])
+                log2 = MemLogger(dargs[:epoch_steps])
+                c1 = Gen_Compose.initialize_chain(proc_1, q1, chain_steps)
+                c2 = Gen_Compose.initialize_chain(proc_2, q2, chain_steps)
+                e = 1; klm = zeros(16, 16); max_kl = 0.0; cidx = CartesianIndex(0, 0);
+                while e < dargs[:epochs] && max_kl < dargs[:kl_threshold]
+                    m1 = train!(c1, log1, dargs[:epoch_steps])
+                    m2 = train!(c2, log2, dargs[:epoch_steps])
+                    klm, max_kl, cidx = test(m1, m2)
+                    e += 1
+                end
+                println("Inference END")
+                GranularScenes.viz_chain(c1)
+                GranularScenes.viz_chain(c2)
+                println("Max KL: $(max_kl), @ index $(cidx)")
+                GranularScenes.display_mat(klm)
             end
             println("Chain $(c) complete")
         end
