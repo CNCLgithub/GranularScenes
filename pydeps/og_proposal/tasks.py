@@ -68,7 +68,7 @@ class SceneEmbedding(pl.LightningModule):
                           os.path.join(self.logger.log_dir ,
                                        "reconstructions",
                                        f"recons_{self.logger.name}_epoch_{self.current_epoch}.png"),
-                          normalize=True,
+                          # normalize=True,
                           nrow=16)
         # print(y.shape)
         # vutils.save_image(r.data,
@@ -88,7 +88,7 @@ class SceneEmbedding(pl.LightningModule):
                           os.path.join(self.logger.log_dir ,
                                        "samples",
                                        f"{self.logger.name}_epoch_{self.current_epoch}.png"),
-                          normalize=True,
+                          # normalize=True,
                           nrow=4)
 
     def configure_optimizers(self):

@@ -2,7 +2,7 @@ mode: 'scene_vae'
 
 model_params:
   input_dim: 1
-  latent_dim: 16
+  latent_dim: 64
 
 path_params:
   train_path: "/spaths/datasets/ddp_train_11f_32x32"
@@ -15,14 +15,14 @@ loader_params:
 exp_params:
   beta: 1.0
   kld_weight: 0.01
-  lr: 0.005
+  lr: 0.001
   weight_decay: 0.0
   sched_gamma: 1.0
 
 manual_seed: 1234
 
 trainer_params:
-  max_epochs: 500
+  max_epochs: 100
 
 logging_params:
   save_dir: "/spaths/checkpoints"
