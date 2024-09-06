@@ -313,7 +313,9 @@ version = "0.4.6"
 
 [[deps.Gen_Compose]]
 deps = ["DataStructures", "FileIO", "Gen", "JLD2", "Revise", "UnPack"]
-path = "/home/mario/dev/scenes/GranularScenes/env.d/jenv/dev/Gen_Compose"
+git-tree-sha1 = "7005b4f47bc08ed804ea265f808b0ddb9cb39212"
+repo-rev = "master"
+repo-url = "https://github.com/CNCLgithub/Gen_Compose.git"
 uuid = "c1ef4dca-b0a6-4a35-b24b-46cbf3979a16"
 version = "1.0.0"
 
