@@ -45,6 +45,8 @@ The finest resolutions supported
 """
 max_leaves(n::QTProdNode) = 2^(n.max_level - 1)
 
+tree_idx(n::QTProdNode) = n.tree_idx
+
 # helper constants
 const _slope =  SVector{2, Float64}([1., -1.])
 const _intercept =  SVector{2, Float64}([0.5, 0.5])

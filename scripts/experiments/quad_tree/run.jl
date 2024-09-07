@@ -3,13 +3,10 @@ using JSON
 using JLD2
 using Rooms
 using FileIO
-# using Random
 using ArgParse
 using Accessors
 using Gen_Compose
 using GranularScenes
-using Gen: get_retval
-using LinearAlgebra: lmul!
 
 
 function parse_commandline(c)
@@ -97,65 +94,10 @@ end
 function block_tile(r::GridRoom, tidx::Int)
     d = deepcopy(data(r))
     d[tidx] = obstacle_tile
+    cidx = CartesianIndices(Rooms.steps(r))[tidx]
+    println("Blocked tile at location $(cidx)")
     GridRoom(r, d)
 end
-
-function train!(c::AMHChain, log::ChainLogger,
-                steps::Int = 50)
-
-    for _ = 1:steps
-        Gen_Compose.is_finished(c) && break
-        Gen_Compose.step!(c)
-        Gen_Compose.report_step!(log, c)
-        Gen_Compose.increment!(c)
-    end
-
-    # println("After step")
-    # GranularScenes.viz_chain(c)
-    # HACK: save last chunk of train chain
-    # Gen_Compose.report_step!(log, c)
-    marginal = marginalize(buffer(log), :obstacles)
-end
-
-
-
-function test(m1::Matrix, m2::Matrix)
-    max_d = 0.0
-    c = CartesianIndex(0, 0)
-    klm = similar(m1)
-    @inbounds for i = CartesianIndices(m1)
-        d = klm[i] =  kl(m1[i], m2[i])
-        if d > max_d
-            max_d = d
-            c = i
-        end
-    end
-    lmul!(1.0 / sum(klm), klm)
-    (klm, max_d, c)
-end
-
-function kl(p::Real, q::Real)
-    p = clamp(p, 0.01, 0.99)
-    q = clamp(q, 0.01, 0.99)
-    log(1 - p) - log(1 - q) +
-        p * (log(p) + log(1-q) - log(q) - log(1 - p))
-end
-
-function marginalize(bfr, key)
-    n = length(bfr)
-    # @show n
-    @assert n > 0
-    marginal = similar(bfr[1][key])
-    fill!(marginal, 0.0)
-    for i = 1:n
-        datum = bfr[i][key]
-        for j = eachindex(marginal)
-            marginal[j] += datum[j]
-        end
-    end
-    lmul!(1.0 / n, marginal)
-end
-
 
 function main(c=ARGS)
     args = parse_commandline(c)
@@ -177,7 +119,8 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
-    for door = [1, 2]
+    for door = [2]
+    # for door = [1, 2]
         out_path = "/spaths/experiments/flicker_$(dataset)_$(model)/$(scene)_$(door)"
         if args["reverse"]
             out_path *= "_reversed"
@@ -203,7 +146,7 @@ function main(c=ARGS)
         model_params = first(q1.args)
         img = GranularScenes.render(model_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                     var = 0.01)
+                                     var = 0.1)
 
 
         proc_1_kwargs = read_json(args["proc"])
@@ -267,17 +210,16 @@ function main(c=ARGS)
             if !complete
                 println("Starting chain $c")
                 chain_steps = dargs[:epoch_steps] * dargs[:epochs]
-                # log1 = JLD2Logger(dargs[:epoch_steps], c1_out)
-                # log2 = JLD2Logger(dargs[:epoch_steps], c2_out)
                 log1 = MemLogger(dargs[:epoch_steps])
                 log2 = MemLogger(dargs[:epoch_steps])
                 c1 = Gen_Compose.initialize_chain(proc_1, q1, chain_steps)
                 c2 = Gen_Compose.initialize_chain(proc_2, q2, chain_steps)
                 e = 1; klm = zeros(16, 16); max_kl = 0.0; cidx = CartesianIndex(0, 0);
                 while e < dargs[:epochs] && max_kl < dargs[:kl_threshold]
-                    m1 = train!(c1, log1, dargs[:epoch_steps])
-                    m2 = train!(c2, log2, dargs[:epoch_steps])
-                    klm, max_kl, cidx = test(m1, m2)
+                    (klm, max_kl, cidx, _) =
+                        search_step!(c1, c2, log1, log2,
+                                     dargs[:epoch_steps],
+                                     dargs[:search_weight])
                     e += 1
                 end
                 println("Inference END")

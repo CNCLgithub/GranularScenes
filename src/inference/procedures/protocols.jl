@@ -117,7 +117,7 @@ mutable struct AdaptiveAux <: AuxillaryState
     objective::Any
     accepts::Int64
     steps::Int64
-    sensitivities::Matrix{Float64}
+    sensitivities::Matrix{Float64} # TODO: remove, not used
     queue::PriorityQueue{Int64, Float64, ReverseOrdering}
 end
 
@@ -146,10 +146,10 @@ function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
     nidx = categorical(ws)
     node = ks[nidx]
     gr = aux.queue[node]
-    if bernoulli(0.5)
-        node = rand(keys(aux.queue))
-        gr = aux.queue[node]
-    end
+    # if bernoulli(0.25) # TODO: make hyper-parameter
+    #     node = rand(keys(aux.queue))
+    #     gr = aux.queue[node]
+    # end
     # println("Adaptive Protocol: node $(node), relevance $(gr)")
     # i = 1
     # for kv = aux.queue

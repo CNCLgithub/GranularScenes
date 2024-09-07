@@ -1,5 +1,6 @@
 {
-    "epoch_steps": 20,
-    "epochs": 30,
-    "kl_threshold": 100.0
+    "epoch_steps": 10,
+    "epochs": 20,
+    "kl_threshold": 100.0,
+    "search_weight": 0.05
 }

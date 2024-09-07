@@ -25,6 +25,7 @@ function display_mat(m::Matrix;
                      rotate::Bool = true,
                      c1=colorant"black",
                      c2=colorant"white")
+    m = clamp.(m, 0.0, 1.0)
     img = weighted_color_mean.(m, c2, c1)
     img = rotate ? rotr90(img, 3) : img
     display(img)
