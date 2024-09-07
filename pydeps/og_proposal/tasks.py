@@ -78,7 +78,9 @@ class SceneEmbedding(pl.LightningModule):
         #                   normalize=True,
         #                   nrow=12)
         self.log_dict({f"val_{key}": val.item()
-                       for key, val in l.items()})
+                       for key, val in l.items()},
+                      prog_bar = True
+                      )
         self.sample_images()
 
 
@@ -93,8 +95,10 @@ class SceneEmbedding(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.model.parameters(),
-                               lr=self.hparams.lr,
-                               weight_decay=self.hparams.weight_decay)
+                              lr=self.hparams.lr,
+                              # momentum = 0.9,
+                              # weight_decay=self.hparams.weight_decay
+                              )
         scheduler = optim.lr_scheduler.ExponentialLR(optimizer,
                                                      gamma = self.hparams.sched_gamma)
         return [optimizer], [scheduler]
@@ -118,13 +122,15 @@ class OGDecoder(pl.LightningModule):
         self.save_hyperparameters(ignore=['encoder', 'decoder'])
 
     def forward(self, x: Tensor) -> Tensor:
-        mu, log_var = self.encoder.model.encode(x)
-        z = self.encoder.model.reparameterize(mu, log_var)
+        if x.shape[1] == 3:
+            x = x[:, 0:1, :, :]
+        dist = self.encoder.model.encode(x)
+        z = self.encoder.model.reparameterize(dist)
         return self.decoder(z)
 
-    def determ_forward(self, x: Tensor) -> Tensor:
-        mu, log_var = self.encoder.model.encode(x)
-        return self.decoder(mu)
+    # def determ_forward(self, x: Tensor) -> Tensor:
+    #     mu, log_var = self.encoder.model.encode(x)
+    #     return self.decoder(mu)
 
     def loss_function(self, x: Tensor, y: Tensor):
         loss = F.mse_loss(x, y)
@@ -133,7 +139,6 @@ class OGDecoder(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, og = batch
         pred_og = self.forward(x)
-        # pred_og = self.forward(x[:, 0, :, :])
         train_loss = self.loss_function(pred_og, og)
         return train_loss
 
@@ -141,47 +146,38 @@ class OGDecoder(pl.LightningModule):
         x, og = batch
         pred_og = self.forward(x)
         val_loss = self.loss_function(pred_og, og)
-        self.log('val_loss', val_loss)
-        # og_pred_img = rotate(resize(pred_og.unsqueeze(1), 256), 90).data
-        # og_pred_img = torch.flip(resize(pred_og.unsqueeze(1), 256), (2,)).data
-        og_pred_img = torch.flip(pred_og.unsqueeze(1), (2,)).data
-        vutils.save_image(og_pred_img,
-                          os.path.join(self.logger.log_dir ,
-                                       "reconstructions",
-                                       f"recons_{self.logger.name}_Epoch_{self.current_epoch}.png"),
-                          normalize=False,
-                          nrow=2)
-        # og_gt_img = rotate(resize(og.unsqueeze(1), 256), 90).data
-        # og_gt_img = torch.flip(resize(og.unsqueeze(1), 256), (2,)).data
-        og_gt_img = torch.flip(og.unsqueeze(1), (2,)).data
+        self.log('val_loss', val_loss, prog_bar = True)
         if self.current_epoch % 5 == 0:
-            vutils.save_image(og_gt_img,
+            og_gt_img = torch.flip(og.unsqueeze(1), (2,))
+            og_pred_img = torch.flip(pred_og.unsqueeze(1), (2,))
+            imgs = torch.cat((og_gt_img, og_pred_img))
+            vutils.save_image(imgs.data,
                             os.path.join(self.logger.log_dir ,
                                         "reconstructions",
-                                        f"gt_{self.logger.name}_Epoch_{self.current_epoch}.png"),
+                                        f"og_{self.logger.name}_Epoch_{self.current_epoch}.png"),
                             normalize=False,
-                            nrow=2)
+                            nrow=16)
             vutils.save_image(x.data,
                             os.path.join(self.logger.log_dir ,
                                         "reconstructions",
                                         f"input_{self.logger.name}_Epoch_{self.current_epoch}.png"),
                             normalize=True,
-                            nrow=2)
+                              nrow=4)
             self.sample_ogs()
 
     def test_step(self, batch, batch_idx):
         self.validation_step(batch, batch_idx)
 
     def sample_ogs(self):
-        samples = self.decoder.sample(25,
-                                      self.device).unsqueeze(1)
+        samples = self.decoder.sample(16,
+                                      self.device)
         sdata = resize(samples, 256).cpu().data
         vutils.save_image(sdata ,
-                        os.path.join(self.logger.log_dir ,
-                                        "samples",
-                                        f"{self.logger.name}_Epoch_{self.current_epoch}.png"),
-                        normalize=False,
-                        nrow=2)
+                          os.path.join(self.logger.log_dir ,
+                                       "samples",
+                                       f"{self.logger.name}_Epoch_{self.current_epoch}.png"),
+                          normalize=False,
+                          nrow=4)
 
 
     def configure_optimizers(self):

@@ -43,7 +43,7 @@ def main():
         task = SceneEmbedding(arch,  **config['exp_params'])
         loader = ogvae_loader
     elif config['mode'] == 'og_decoder':
-        vae = VAE(**config['vae_params'])
+        vae = VAE(**config['model_params'])
         encoder = SceneEmbedding.load_from_checkpoint(config['vae_chkpt'],
                                                       model = vae)
         decoder = Decoder(**config['model_params'])

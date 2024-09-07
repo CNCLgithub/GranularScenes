@@ -64,10 +64,10 @@ function generate_cm_from_ddp(ddp_params::DataDrivenState,
                               min_depth::Int64 = 1)
     @unpack nn, device, var = ddp_params
 
-    max_depth::Int64 = 5
+    max_depth::Int64 = 3
     img = process_ddp_input(timg, device)
-    x = @pycall nn.determ_forward(img)::PyObject
-    state = @pycall x.detach().cpu().numpy()::Matrix{Float64}
+    x = @pycall nn.forward(img)::PyObject
+    state = @pycall x.detach().squeeze(0).cpu().numpy()::Matrix{Float64}
     println("Data-driven state")
     display_mat(state)
     head = model_params.start_node

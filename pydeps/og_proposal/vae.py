@@ -16,7 +16,7 @@ class VAE(nn.Module):
         latent_dim (int): Dimensionality of the latent space.
     """
 
-    def __init__(self, input_dim = 3, hidden_dim = 16, latent_dim = 32):
+    def __init__(self, input_dim = 1, hidden_dim = 16, latent_dim = 32):
         super(VAE, self).__init__()
 
         self.input_dim = input_dim
@@ -35,7 +35,7 @@ class VAE(nn.Module):
             nn.SiLU(),  # Swish activation function
             nn.Flatten(),
             # PrintLayer(),
-            nn.Linear(hidden_dim * 64, 2 * latent_dim),# 2 for mean and variance.
+            nn.Linear((hidden_dim // 4) * 256, 2 * latent_dim),# 2 for mean and variance.
             # PrintLayer(),
         )
 
@@ -43,10 +43,14 @@ class VAE(nn.Module):
         self.softplus = nn.Softplus()
 
         self.decoder = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim * 64),
-            nn.Unflatten(1,  (hidden_dim // 4, hidden_dim, hidden_dim)),
+            # PrintLayer(),
+            nn.Linear(latent_dim, (hidden_dim // 4) * 256),
+            # PrintLayer(),
+            nn.Unflatten(1,  (hidden_dim // 4, 16, 16)),
+            # PrintLayer(),
             nn.ConvTranspose2d(hidden_dim // 4, hidden_dim // 2, 5, 2, 2,
                                output_padding = 1),
+            # PrintLayer(),
             nn.SiLU(),  # Swish activation function
             nn.ConvTranspose2d(hidden_dim // 2, hidden_dim, 5, 2, 2,
                                output_padding = 1),
@@ -54,10 +58,9 @@ class VAE(nn.Module):
             nn.ConvTranspose2d(hidden_dim, 1, 5, 2, 2,
                                output_padding = 1),
             nn.Sigmoid(),  # Swish activation function
-            # Resize(size = (128, 128)),
         )
 
-    def encode(self, x, eps: float = 1e-8):
+    def encode(self, x):
         """
         Encodes the input data into the latent space.
 
@@ -70,7 +73,7 @@ class VAE(nn.Module):
         """
         x = self.encoder(x)
         mu, logvar = torch.chunk(x, 2, dim=-1)
-        scale = self.softplus(logvar) + eps
+        scale = self.softplus(logvar) + 1e-8
         scale_tril = torch.diag_embed(scale)
 
         return torch.distributions.MultivariateNormal(mu, scale_tril=scale_tril)
@@ -134,60 +137,37 @@ class VAE(nn.Module):
 
 class Decoder(nn.Module):
 
-    def __init__(self,
-                 in_channels: int,
-                 latent_dim: int,
-                 hidden_dims: List = None,
-                 **kwargs) -> None:
+    def __init__(self, input_dim = 1, hidden_dim = 16, latent_dim = 32):
         super(Decoder, self).__init__()
 
         self.latent_dim = latent_dim
-        # Build Decoder
-        if hidden_dims is None:
-            hidden_dims = [32, 64, 128, 256]
-        modules = []
-        self.decoder_input = nn.Linear(latent_dim, hidden_dims[-1] * 16)
-        hidden_dims.reverse()
-        for i in range(len(hidden_dims) - 1):
-            modules.append(
-                nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dims[i],
-                                       hidden_dims[i + 1],
-                                       kernel_size=4,
-                                       stride = 2,
-                                       padding=1),
-                    # PrintLayer(),
-                    nn.BatchNorm2d(hidden_dims[i + 1]),
-                    nn.LeakyReLU())
-            )
-        self.decoder = nn.Sequential(*modules)
-        self.final_layer = nn.Sequential(
-                            nn.Conv2d(hidden_dims[-1], out_channels= 1,
-                                      kernel_size= 3, padding= 1),
-                            # PrintLayer(),
-                            # nn.LeakyReLU(),
-                            # nn.Conv2d(hidden_dims[-1], out_channels= 1,
-                            #           kernel_size= 3, padding= 1),
-                            # PrintLayer(),
-                            nn.Sigmoid())
 
-    def decode(self, z: Tensor) -> Tensor:
-        result = self.decoder_input(z)
-        result = result.view(z.shape[0], -1, 4, 4)
-        result = self.decoder(result)
-        result = self.final_layer(result)
-        return result.squeeze()
+        self.decoder = nn.Sequential(
+            # PrintLayer(),
+            nn.Linear(latent_dim, (hidden_dim // 4) * 256),
+            # PrintLayer(),
+            nn.Unflatten(1,  (hidden_dim // 4, 16, 16)),
+            # PrintLayer(),
+            nn.ConvTranspose2d(hidden_dim // 4, hidden_dim // 2, 5, 2, 2,
+                               output_padding = 1),
+            # PrintLayer(),
+            nn.SiLU(),  # Swish activation function
+            nn.ConvTranspose2d(hidden_dim // 2, hidden_dim, 5, 2, 2,
+                               output_padding = 1),
+            # PrintLayer(),
+            nn.SiLU(),  # Swish activation function
+            nn.ConvTranspose2d(hidden_dim, 1, 5, 2, 2,
+                               output_padding = 1),
+            # PrintLayer(),
+            nn.Conv2d(1, 1, 12, 8, 2),
+            # PrintLayer(),
+            nn.Sigmoid(),
+        )
 
 
     def forward(self, mu: Tensor, **kwargs) -> Tensor:
-        return self.decode(mu)
+        return self.decoder(mu).squeeze(1)
 
-    def loss_function(self,
-                      pred_og,
-                      real_og,
-                      **kwargs) -> dict:
-        loss = F.mse_loss(pred_og, real_og)
-        return {'loss': loss}
 
     def generate(self, z: Tensor, **kwargs) -> Tensor:
         """
@@ -207,10 +187,9 @@ class Decoder(nn.Module):
         :param current_device: (Int) Device to run the model
         :return: (Tensor)
         """
-        z = torch.randn(num_samples,
-                        self.latent_dim)
+        z = torch.randn(num_samples, self.latent_dim)
         z = z.to(current_device)
-        samples = self.decode(z)
+        samples = self.decoder(z)
         return samples
 
 class PrintLayer(nn.Module):

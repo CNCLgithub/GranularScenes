@@ -190,7 +190,7 @@ function main(c=ARGS)
         gm_params = QuadTreeModel(room1;
                                   read_json(args["gm"])...,
                                   render_kwargs =
-                                      Dict(:resolution => (256,256)))
+                                      Dict(:resolution => (128,128)))
 
         println("Saving results to: $(out_path)")
 
@@ -199,8 +199,21 @@ function main(c=ARGS)
         q1 = query_from_params(room1, gm_params)
         q2 = query_from_params(room2, gm_params)
 
+
+        model_params = first(q1.args)
+        img = GranularScenes.render(model_params.renderer, room1)
+        ddp_params = DataDrivenState(;config_path = args["ddp"],
+                                     var = 0.01)
+
+
         proc_1_kwargs = read_json(args["proc"])
         proc_2_kwargs = deepcopy(proc_1_kwargs)
+
+        proc_1_kwargs[:ddp]  = generate_cm_from_ddp
+        proc_1_kwargs[:ddp_args] = (ddp_params, img, model_params, 2)
+        proc_2_kwargs[:ddp]  = generate_cm_from_ddp
+        proc_2_kwargs[:ddp_args] = (ddp_params, img, model_params, 2)
+
 
         protocol = attention == :ac ?
             AdaptiveComputation() : UniformProtocol()
