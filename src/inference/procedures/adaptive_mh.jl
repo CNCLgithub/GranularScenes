@@ -90,10 +90,6 @@ function kernel_move!(chain::AMHChain)
 
     # select node to rejuv
     node = select_node(protocol, aux)
-    # qt = get_retval(t).leaves
-    # nleaves = length(qt)
-    # node = qt[(chain.step % nleaves) + 1].node.tree_idx
-
     rw_block_init!(aux, protocol, t)
 
     # RW moves - first stage
@@ -181,11 +177,16 @@ function viz_chain(chain::AMHChain)
     # println("Attention")
     # s = size(auxillary.sensitivities)
     # display_mat(reshape(auxillary.weights, s))
-    println("Inferred state")
-    display_mat(project_qt(qt); c2 = colorant"blue")
-    println("Estimated path")
+    println("Inferred state + Path + Attention")
+    geo = draw_mat(project_qt(qt), true, colorant"black", colorant"blue")
+    # println("Estimated path")
     path = Matrix{Float64}(ex_path(chain))
-    display_mat(path; c2 = colorant"green")
+    pth = draw_mat(path, true, colorant"black", colorant"green")
+
+    attm = ex_attention(chain)
+    lmul!(1.0 / maximum(attm), attm)
+    att = draw_mat(attm, true, colorant"black", colorant"red")
+    display(reduce(hcat, [geo, pth, att]))
     # println("Predicted Image")
     # display_img(trace_st.img_mu)
     return nothing

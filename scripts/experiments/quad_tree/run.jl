@@ -146,16 +146,16 @@ function main(c=ARGS)
         model_params = first(q1.args)
         img = GranularScenes.render(model_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                     var = 0.1)
+                                     var = 0.25)
 
 
         proc_1_kwargs = read_json(args["proc"])
         proc_2_kwargs = deepcopy(proc_1_kwargs)
 
         proc_1_kwargs[:ddp]  = generate_cm_from_ddp
-        proc_1_kwargs[:ddp_args] = (ddp_params, img, model_params, 2)
+        proc_1_kwargs[:ddp_args] = (ddp_params, img, model_params, 2, 3)
         proc_2_kwargs[:ddp]  = generate_cm_from_ddp
-        proc_2_kwargs[:ddp_args] = (ddp_params, img, model_params, 2)
+        proc_2_kwargs[:ddp_args] = (ddp_params, img, model_params, 2, 3)
 
 
         protocol = attention == :ac ?
@@ -210,23 +210,23 @@ function main(c=ARGS)
             if !complete
                 println("Starting chain $c")
                 chain_steps = dargs[:epoch_steps] * dargs[:epochs]
-                log1 = MemLogger(dargs[:epoch_steps])
-                log2 = MemLogger(dargs[:epoch_steps])
+                log1 = MemLogger(dargs[:margin_size])
+                log2 = MemLogger(dargs[:margin_size])
                 c1 = Gen_Compose.initialize_chain(proc_1, q1, chain_steps)
                 c2 = Gen_Compose.initialize_chain(proc_2, q2, chain_steps)
                 e = 1; klm = zeros(16, 16); max_kl = 0.0; cidx = CartesianIndex(0, 0);
                 while e < dargs[:epochs] && max_kl < dargs[:kl_threshold]
-                    (klm, max_kl, cidx, _) =
+                    (klm, max_kl, cidx, eloc) =
                         search_step!(c1, c2, log1, log2,
                                      dargs[:epoch_steps],
                                      dargs[:search_weight])
                     e += 1
                 end
-                println("Inference END")
-                GranularScenes.viz_chain(c1)
-                GranularScenes.viz_chain(c2)
-                println("Max KL: $(max_kl), @ index $(cidx)")
-                GranularScenes.display_mat(klm)
+                # println("Inference END")
+                # GranularScenes.viz_chain(c1)
+                # GranularScenes.viz_chain(c2)
+                # println("Expected $(eloc); Max KL: $(max_kl), @ index $(cidx)")
+                # GranularScenes.display_mat(klm)
             end
             println("Chain $(c) complete")
         end

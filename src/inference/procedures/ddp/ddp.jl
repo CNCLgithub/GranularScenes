@@ -61,10 +61,10 @@ end
 
 function generate_cm_from_ddp(ddp_params::DataDrivenState,
                               timg, model_params,
-                              min_depth::Int64 = 1)
+                              min_depth::Int64 = 1,
+                              max_depth::Int64 = 5)
     @unpack nn, device, var = ddp_params
 
-    max_depth::Int64 = 4
     img = process_ddp_input(timg, device)
     x = @pycall nn.forward(img)::PyObject
     state = @pycall x.detach().squeeze(0).cpu().numpy()::Matrix{Float64}

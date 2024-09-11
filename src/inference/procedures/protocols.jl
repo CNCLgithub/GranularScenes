@@ -134,31 +134,12 @@ end
 accepts(aux::AdaptiveAux) = aux.accepts
 
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
-
     ks = collect(keys(aux.queue))
     ws = collect(values(aux.queue))
-
     clamp!(ws, -100, Inf)
-    ws = softmax(ws, 1.0)
-    stop = 0.0
-    node = 0
-    gr = 0.0
+    ws = softmax(ws, 10.0) # TODO: add as hyperparameter
     nidx = categorical(ws)
     node = ks[nidx]
-    gr = aux.queue[node]
-    # if bernoulli(0.25) # TODO: make hyper-parameter
-    #     node = rand(keys(aux.queue))
-    #     gr = aux.queue[node]
-    # end
-    # println("Adaptive Protocol: node $(node), relevance $(gr)")
-    # i = 1
-    # for kv = aux.queue
-    #     i > 3 && break
-    #     println("\t $(kv) | $(ws[i])")
-    #     i += 1
-    # end
-
-    node
 end
 
 function rw_block_init!(aux::AdaptiveAux, p::AdaptiveComputation,
@@ -202,11 +183,7 @@ function rw_block_complete!(aux::AdaptiveAux,
                             t, node)
     # compute goal-relevance
     @unpack delta_pi, delta_s, steps, accepts = aux
-    delta_pi = log(delta_pi) - log(steps)
-    delta_s = delta_s - log(steps)
-    goal_relevance = delta_pi + delta_s
-    # goal_relevance = log(delta_pi) + log(delta_s) - 2 * log(steps)
-
+    goal_relevance = log(delta_pi) + delta_s - log(steps)
     # update aux state
     # qt = get_retval(t)
     # prod_node = traverse_qt(qt, node).node
@@ -214,7 +191,9 @@ function rw_block_complete!(aux::AdaptiveAux,
     # for i = sidx
     #     aux.sensitivities[i] = goal_relevance
     # end
-    aux.queue[node] = goal_relevance
+    # @show aux.queue[node]
+    aux.queue[node] = logsumexp(aux.queue[node] - 50, goal_relevance)
+    # @show aux.queue[node]
     accept_ratio = accepts / steps
     # println("\t $(delta_pi) + $(delta_s) | AR=$(accept_ratio)")
     return nothing
