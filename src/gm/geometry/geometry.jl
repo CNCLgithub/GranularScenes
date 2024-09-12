@@ -122,6 +122,7 @@ function dist(x::QTProdNode, y::QTProdNode)
     norm(x.center - y.center)
 end
 
+
 """
     contact(a, b)
 
@@ -290,7 +291,6 @@ function leaf_mapping(lv::Vector{QTAggNode})::Dict{Int64, Int64}
 end
 
 
-
 #################################################################################
 # Tree and traversal
 #################################################################################
@@ -406,6 +406,13 @@ function project_qt!(gs::Matrix{Float32},
         end
     end
     return nothing
+end
+
+"""
+Retrieves the leaf node with tree_idx == idx
+"""
+function leaf_from_idx(qt::QuadTree, idx::Int64)
+    qt.leaves[qt.mapping[idx]]
 end
 
 include("qt_prior_gen.jl")
