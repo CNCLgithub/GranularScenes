@@ -102,7 +102,7 @@ end
 
 @with_kw struct AdaptiveComputation <: AttentionProtocol
     # Goal driven belief
-    objective::Function = qt_path_cost
+    objective::Function = quad_tree_path
     # destance metrics for two task objectives
     distance::Function = (x, y) -> norm(x - y)
 
@@ -136,8 +136,8 @@ accepts(aux::AdaptiveAux) = aux.accepts
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
     ks = collect(keys(aux.queue))
     ws = collect(values(aux.queue))
-    clamp!(ws, -100, Inf)
-    ws = softmax(ws, 10.0) # TODO: add as hyperparameter
+    # clamp!(ws, -100, Inf)
+    ws = softmax(ws, 1.0) # TODO: add as hyperparameter
     nidx = categorical(ws)
     node = ks[nidx]
 end
@@ -153,10 +153,15 @@ end
 
 function rw_block_inc!(aux::AdaptiveAux, p::AdaptiveComputation,
                        t, node, alpha)
-    obj_t_prime = p.objective(t)
-    aux.delta_pi += p.distance(aux.objective, obj_t_prime)
+    # obj_t_prime = p.objective(t)
+    # aux.delta_pi += p.distance(aux.objective, obj_t_prime)
+    inc_delta_pi = delta_pi(aux.objective, t)
+    if inc_delta_pi > 100
+        viz_node(t, node)
+    end
+    aux.delta_pi = logsumexp(aux.delta_pi, inc_delta_pi)
     # ds = alpha < -20 ? 0.0 : exp(alpha)
-    aux.delta_s = logsumexp(aux.delta_s, alpha)
+    aux.delta_s = logsumexp(aux.delta_s, min(0.0, alpha))
     # aux.delta_s += exp(min(0.0, alpha))
     # aux.delta_s += -0.01
     aux.steps += 1
@@ -183,7 +188,11 @@ function rw_block_complete!(aux::AdaptiveAux,
                             t, node)
     # compute goal-relevance
     @unpack delta_pi, delta_s, steps, accepts = aux
-    goal_relevance = log(delta_pi) + delta_s - log(steps)
+    goal_relevance = delta_pi + delta_s - log(steps)
+    # println("NODE: $(node)")
+    # @show delta_pi
+    # @show delta_s
+    # @show goal_relevance
     # update aux state
     # qt = get_retval(t)
     # prod_node = traverse_qt(qt, node).node
@@ -192,7 +201,8 @@ function rw_block_complete!(aux::AdaptiveAux,
     #     aux.sensitivities[i] = goal_relevance
     # end
     # @show aux.queue[node]
-    aux.queue[node] = logsumexp(aux.queue[node] - 50, goal_relevance)
+    aux.queue[node] = goal_relevance
+    # aux.queue[node] = logsumexp(aux.queue[node] - 50, goal_relevance)
     # @show aux.queue[node]
     accept_ratio = accepts / steps
     # println("\t $(delta_pi) + $(delta_s) | AR=$(accept_ratio)")
@@ -267,4 +277,18 @@ function update_queue!(queue, node::Int64, move::Merge)
     end
     queue[parent] = prev_val # * 0.25
     return nothing
+end
+
+function viz_node(tr, node::Int64)
+    qt = get_retval(tr)
+    n = max_leaves(qt)
+    leaves = qt.leaves
+    m = Matrix{Bool}(undef, n, n)
+    fill!(m, false)
+    v = leaf_from_idx(qt, node).node
+    for idx = node_to_idx(v, n)
+        m[idx] = true
+    end
+    println("Selected node")
+    display_mat(m)
 end

@@ -107,7 +107,6 @@ function kernel_move!(chain::AMHChain)
     # if RW acceptance ratio is high, add more
     # otherwise, ready for SM
     accept_ratio = accepts(aux) / rw_budget
-    # TODO: integrate delta pi?
     addition_rw_cycles =  floor(Int64, sm_budget * accept_ratio)
 
     for j = 1:addition_rw_cycles
@@ -118,33 +117,22 @@ function kernel_move!(chain::AMHChain)
             t = _t
         end
     end
-
     rw_block_complete!(aux, protocol, t, node)
-
     sm_block_init!(aux, protocol)
 
-    # SM moves
     remaining_sm = sm_budget - addition_rw_cycles
-    if can_split(t, node) # REVIEW: why only split?
-        is_balanced = balanced_split_merge(t, node)
-        moves = is_balanced ? [split_move, merge_move] : [split_move]
+    if can_split(t, node)
+        moves = balanced_split_merge(t, node) ?
+            [split_move, merge_move] : [split_move]
         for i = 1 : remaining_sm
             move = rand(moves)
             _t, _w = split_merge_move(t, node, move)
-
             if log(rand()) < _w
-                # println("$(move) weight: $(_w)")
-                # compare_latents(t, _t, move, node)
                 sm_block_accept!(aux, node, move)
                 sm_block_complete!(aux, protocol, node, move)
                 t = _t
                 break
             end
-            # __t = inner_rw_moves!(aux, protocol, _t, _w, move, node)
-            # if accepts(aux) > 0
-            #     t = __t
-            #     break
-            # end
         end
     end
 
@@ -177,13 +165,14 @@ function viz_chain(chain::AMHChain)
     # println("Attention")
     # s = size(auxillary.sensitivities)
     # display_mat(reshape(auxillary.weights, s))
-    println("Inferred state + Path + Attention")
+    println("\n\nInferred state + Path + Attention")
     geo = draw_mat(project_qt(qt), true, colorant"black", colorant"blue")
     # println("Estimated path")
     path = Matrix{Float64}(ex_path(chain))
     pth = draw_mat(path, true, colorant"black", colorant"green")
 
-    attm = ex_attention(chain)
+    attm = softmax(Float64.(ex_attention(chain)), 0.1)
+    @show maximum(attm)
     lmul!(1.0 / maximum(attm), attm)
     att = draw_mat(attm, true, colorant"black", colorant"red")
     display(reduce(hcat, [geo, pth, att]))

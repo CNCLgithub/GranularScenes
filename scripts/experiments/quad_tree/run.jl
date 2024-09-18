@@ -119,8 +119,9 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
-    for door = [2]
-    # for door = [1, 2]
+    doors = [2]
+
+    for door = doors
         out_path = "/spaths/experiments/flicker_$(dataset)_$(model)/$(scene)_$(door)"
         if args["reverse"]
             out_path *= "_reversed"
@@ -153,9 +154,9 @@ function main(c=ARGS)
         proc_2_kwargs = deepcopy(proc_1_kwargs)
 
         proc_1_kwargs[:ddp]  = generate_cm_from_ddp
-        proc_1_kwargs[:ddp_args] = (ddp_params, img, model_params, 2, 3)
+        proc_1_kwargs[:ddp_args] = (ddp_params, img, model_params, 3, 3)
         proc_2_kwargs[:ddp]  = generate_cm_from_ddp
-        proc_2_kwargs[:ddp_args] = (ddp_params, img, model_params, 2, 3)
+        proc_2_kwargs[:ddp_args] = (ddp_params, img, model_params, 3, 3)
 
 
         protocol = attention == :ac ?

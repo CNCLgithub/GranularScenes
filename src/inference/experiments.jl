@@ -26,17 +26,13 @@ end
 function ex_path(c::AMHChain)
     qt = get_retval(c.state)
     n = max_leaves(qt)
-    path = quad_tree_path(c.state)
+    cost, path = quad_tree_path(c.state)
     leaves = qt.leaves
     m = Matrix{Bool}(undef, n, n)
     fill!(m, false)
-    for e in path.edges
-        src_node = leaves[src(e)].node
-        for idx = node_to_idx(src_node, n)
-            m[idx] = true
-        end
-        dst_node = leaves[dst(e)].node
-        for idx = node_to_idx(dst_node, n)
+    for i = path
+        node = leaf_from_idx(qt, i).node
+        for idx = node_to_idx(node, n)
             m[idx] = true
         end
     end

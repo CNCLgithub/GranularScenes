@@ -167,7 +167,7 @@ end
 # REVIEW: Some way to parameterize weights?
 function produce_weight(n::QTProdNode)::Float64
     @unpack level, max_level = n
-    level == max_level ? 0. : 0.25
+    level == max_level ? 0. : 0.15
     # level == 1 ? 0.99 :
     #     (level == max_level ? 0. : 0.35)
 end
@@ -367,6 +367,7 @@ function traverse_qt(root::QTAggNode, dest::SVector{2, Float64})
     head = root
     while !isempty(head.children)
         idx = findfirst(s -> contains(s, dest), head.children)
+        isnothing(idx) && break
         head = @inbounds head.children[idx]
     end
     return head
@@ -413,6 +414,49 @@ Retrieves the leaf node with tree_idx == idx
 """
 function leaf_from_idx(qt::QuadTree, idx::Int64)
     qt.leaves[qt.mapping[idx]]
+end
+
+function adjacent_leaves(qt::QuadTree, idx::Int64, eps::Float64 = 1E-4)
+    leaf = leaf_from_idx(qt, idx)
+    n = node(leaf)
+    adj = Int64[]
+    adjacent_by_axis!(adj, n, qt, SVector{2, Float64}(0, 1), eps)
+    adjacent_by_axis!(adj, n, qt, SVector{2, Float64}(0, -1), eps)
+    adjacent_by_axis!(adj, n, qt, SVector{2, Float64}(1, 0), eps)
+    adjacent_by_axis!(adj, n, qt, SVector{2, Float64}(-1, 0), eps)
+    return adj
+end
+
+function isroot(n::QTAggNode)
+    node(n).level == 1
+end
+
+function adjacent_by_axis!(adj::Vector{Int64},
+                           n::QTProdNode, qt::QuadTree,
+                           axis::SVector{2, Float64}, eps::Float64)
+    probes = Tuple{SVector{2, Float64}, Int64}[]
+    shift = n.dims .* axis .* SVector{2, Float64}(0.5, 0.5)
+    shift = shift + axis .* SVector{2, Float64}(eps, eps)
+    probe = n.center + shift
+    push!(probes, (probe, n.level))
+    while !isempty(probes)
+        probe, exp_lvl = popfirst!(probes)
+        probed = traverse_qt(qt, probe)
+        pn = node(probed)
+        # out of bounds
+        isroot(probed) && continue
+        if pn.level > exp_lvl
+            # node is smaller than expected
+            lvl_diff = exp_lvl - n.level
+            shift = exp2(-(lvl_diff + 2)) .* n.dims .* reverse(axis)
+            push!(probes, (probe - shift, exp_lvl + 1))
+            push!(probes, (probe + shift, exp_lvl + 1))
+        else
+            # same depth => done
+            push!(adj, pn.tree_idx)
+        end
+    end
+    return nothing
 end
 
 include("qt_prior_gen.jl")
