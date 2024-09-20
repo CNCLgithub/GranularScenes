@@ -167,7 +167,7 @@ end
 # REVIEW: Some way to parameterize weights?
 function produce_weight(n::QTProdNode)::Float64
     @unpack level, max_level = n
-    level == max_level ? 0. : 0.15
+    level == max_level ? 0. : 0.5
     # level == 1 ? 0.99 :
     #     (level == max_level ? 0. : 0.35)
 end
@@ -226,6 +226,7 @@ dof(st::QTAggNode) = st.u
 leaves(st::QTAggNode) = st.leaves
 node(st::QTAggNode) = st.node
 Base.length(st::QTAggNode) = st.k
+children(st::QTAggNode) = st.children
 
 
 """
@@ -240,15 +241,15 @@ function QTAggNode(n::QTProdNode, y::Float64, children::Vector{QTAggNode})
         l = 1
     else
         # equal area => mean of variance
-        u = sqrt(mean(dof.(children).^2))
-        k = sum(length.(children)) + 1
-        l = sum(leaves.(children))
+        u = std(weight.(children))
+        k = sum(length, children) + 1
+        l = sum(leaves, children)
     end
     QTAggNode(y, u, k, l, n, children)
 end
 
 function contains(st::QTAggNode, p::SVector{2, Float64})
-    contains(st.node, p)
+    contains(node(st), p)
 end
 
 max_leaves(n::QTAggNode) = max_leaves(n.node)

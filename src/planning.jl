@@ -12,7 +12,7 @@ function search_step!(c1::AMHChain, c2::AMHChain,
     (klm, max_d, c, dpi_kl) = test(m1, m2)
     eloc = expected_loc(klm)
     result = (klm, max_d, c, eloc)
-    weight = search_weight * Gen_Compose.step(c1)
+    weight = search_weight # * Gen_Compose.step(c1)
     update_deltapi!(c1, dpi_kl, weight)
     update_deltapi!(c2, dpi_kl, weight)
     viz_chain(c1)
@@ -95,15 +95,12 @@ end
 function update_deltapi!(c::AMHChain, dpi_kl::Matrix, weight::Float64 = 1.0)
     aux = auxillary(c)
     state = estimate(c)
-    params = first(get_args(state))
-    nc = params.dims[2] # num cols
-    qt = get_retval(state)
     lw = log(weight)
+    @assert size(dpi_kl) == size(aux.gr)
     @inbounds for li = LinearIndices(dpi_kl)
-        cell = room_to_leaf(qt, li, nc)
-        i = tree_idx(node(cell))
-        w = log(dpi_kl[li]) + lw
-        aux.queue[i] = logsumexp(aux.queue[i], w)
+        aux.gr[li] =
+            logsumexp(aux.gr[li], log(dpi_kl[li]) + lw)
     end
+    update_queue!(aux.queue, aux.gr, state)
     return nothing
 end

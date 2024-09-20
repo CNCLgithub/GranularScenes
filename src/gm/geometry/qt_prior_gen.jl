@@ -19,7 +19,7 @@ end
         # mu = @trace(uniform(0., 1.0), :mu)
         mu = @trace(beta(0.8, 4.0), :mu)
     else
-        mu = mean(weight.(children))
+        mu = mean(weight, children)
     end
 
     agg::QTAggNode = QTAggNode(n, mu, children)

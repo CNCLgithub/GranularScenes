@@ -80,28 +80,7 @@ A tuple, first element is `QTPath` and the second is a vector
 """
 function qt_a_star(qt::QuadTree, dw::Float64, ent::Int64, ext::Int64)
     @unpack root, leaves, mapping = qt
-    length(leaves) == 1 && return QTPath(first(leaves))
-    # # adjacency, distance matrix
-    # ad, dm = nav_graph(leaves, dw)
-
-    # g = SimpleGraph(ad)
-
-    # # map entrance and exit in room to qt
-    # row_d::Int64 = max_leaves(qt.root.node)
-    # ent_point = idx_to_node_space(ent, row_d)
-    # ent_node = traverse_qt(root, ent_point)
-    # ent_idx = mapping[ent_node.node.tree_idx]
-
-    # ext_point = idx_to_node_space(ext, row_d)
-    # ext_node = traverse_qt(root, ext_point)
-    # ext_idx = mapping[ext_node.node.tree_idx]
-
-    # # L2 heuristic used in A*
-    # heuristic = a_star_heuristic(leaves, ext_node, 1.0)
-    # # compute path and path grid
-    # path = a_star(g, ent_idx, ext_idx, dm, heuristic)
-    # QTPath(g, dm, path)
-
+    # length(leaves) == 1 && return QTPath(first(leaves))
     row_d::Int64 = max_leaves(qt.root.node)
     ent_point = idx_to_node_space(ent, row_d)
     ent_node = traverse_qt(root, ent_point)
@@ -201,5 +180,5 @@ function traversal_cost(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
     # c = obs_cost * (weight(dst) * length(node(dst)) +
     #     weight(src) * length(node(src)))
     c = obs_cost * (weight(dst) + weight(src))
-    d * c
+    d + c
 end

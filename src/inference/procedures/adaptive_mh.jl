@@ -121,20 +121,30 @@ function kernel_move!(chain::AMHChain)
     sm_block_init!(aux, protocol)
 
     remaining_sm = sm_budget - addition_rw_cycles
-    if can_split(t, node)
-        moves = balanced_split_merge(t, node) ?
-            [split_move, merge_move] : [split_move]
-        for i = 1 : remaining_sm
-            move = rand(moves)
-            _t, _w = split_merge_move(t, node, move)
-            if log(rand()) < _w
-                sm_block_accept!(aux, node, move)
-                sm_block_complete!(aux, protocol, node, move)
-                t = _t
-                break
-            end
+    for i = 1 : remaining_sm
+        _t, _w = split_merge_move(t, node)
+        if log(rand()) < _w
+            sm_block_accept!(aux, node)
+            sm_block_complete!(aux, protocol, _t, node)
+            t = _t
+            break
         end
     end
+
+    # if can_split(t, node)
+    #     moves = balanced_split_merge(t, node) ?
+    #         [split_move, merge_move] : [split_move]
+    #     for i = 1 : remaining_sm
+    #         move = rand(moves)
+    #         _t, _w = split_merge_move(t, node, move)
+    #         if log(rand()) < _w
+    #             sm_block_accept!(aux, node, move)
+    #             sm_block_complete!(aux, protocol, node, move)
+    #             t = _t
+    #             break
+    #         end
+    #     end
+    # end
 
     # update trace
     chain.state = t
@@ -171,7 +181,7 @@ function viz_chain(chain::AMHChain)
     path = Matrix{Float64}(ex_path(chain))
     pth = draw_mat(path, true, colorant"black", colorant"green")
 
-    attm = softmax(Float64.(ex_attention(chain)), 0.1)
+    attm = softmax(auxillary.gr)
     @show maximum(attm)
     lmul!(1.0 / maximum(attm), attm)
     att = draw_mat(attm, true, colorant"black", colorant"red")

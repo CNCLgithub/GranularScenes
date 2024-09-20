@@ -60,6 +60,23 @@ function split_merge_move(trace::Gen.Trace,
     (new_trace, w1)
 end
 
+
+function split_merge_move(trace::Gen.Trace,
+                          node::Int64)
+    @debug "SM kernel - $node"
+    translator =
+        SymmetricTraceTranslator(qt_branch_proposal,
+                                 (node,),
+                                 qt_involution_incremental)
+    # passes =)  09/20/24
+    (new_trace, w1) = translator(trace, check = false)
+    # @show w1
+    if isinf(w1)
+        error("-Inf in $(direction) move on node $(node)")
+    end
+    (new_trace, w1)
+end
+
 function balanced_split_merge(t::Gen.Trace, tidx::Int64)::Bool
     qt = get_retval(t)
     st = traverse_qt(qt, tidx)
