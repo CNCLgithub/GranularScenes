@@ -26,10 +26,14 @@ def main():
                         help = 'number of chains')
     parser.add_argument('--duration', type = int, default = 15,
                         help = 'job duration (min)')
+    parser.add_argument('--reversed', action = 'store_true',
+                        help = 'Infer image 2 then image 1')
 
     args = parser.parse_args()
 
     tasks, kwargs, extras = create_tasks(args)
+    if args['reversed']:
+        kwargs['reversed'] = True
 
     interpreter = '#!/bin/bash'
     slurm_out = os.path.join(os.getcwd(), 'env.d/spaths/slurm')

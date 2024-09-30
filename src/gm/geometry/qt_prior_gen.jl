@@ -17,9 +17,9 @@ end
         # w = 1.0 - exp2(-0.5*n.level + 0.5)
         # mu = @trace(beta_uniform(w, 0.5, 0.5), :mu)
         # mu = @trace(uniform(0., 1.0), :mu)
-        mu = @trace(beta(0.8, 9.0), :mu)
+        mu = @trace(beta(0.8, 4.0), :mu)
     else
-        mu = mean(weight.(children))
+        mu = mean(weight, children)
     end
 
     agg::QTAggNode = QTAggNode(n, mu, children)

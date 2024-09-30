@@ -3,13 +3,10 @@ using JSON
 using JLD2
 using Rooms
 using FileIO
-# using Random
 using ArgParse
 using Accessors
 using Gen_Compose
 using GranularScenes
-using Gen: get_retval
-using LinearAlgebra: lmul!
 
 
 function parse_commandline(c)
@@ -32,10 +29,19 @@ function parse_commandline(c)
         arg_type = String
         default = "$(@__DIR__)/procedure.json"
 
+        "--decision"
+        help = "Decision procedure params"
+        arg_type = String
+        default = "$(@__DIR__)/decision.json"
+
         "--ddp"
         help = "DDP config"
         arg_type = String
         default = "/project/scripts/nn/configs/og_decoder.yaml"
+
+        "--reverse", "-f"
+        help = "Infer image 2 then image 1"
+        action = :store_true
 
         "--restart", "-r"
         help = "Whether to resume inference"
@@ -56,7 +62,7 @@ function parse_commandline(c)
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 1
+        default = 2
 
         "chain"
         help = "The number of chains to run"
@@ -88,43 +94,10 @@ end
 function block_tile(r::GridRoom, tidx::Int)
     d = deepcopy(data(r))
     d[tidx] = obstacle_tile
+    cidx = CartesianIndices(Rooms.steps(r))[tidx]
+    println("Blocked tile at location $(cidx)")
     GridRoom(r, d)
 end
-
-function train(proc, query, out)
-    dlog = JLD2Logger(50, out)
-    c = run_chain(proc, query, proc.samples, dlog)
-    println("Final step")
-    GranularScenes.viz_chain(c)
-    marginal = marginalize(buffer(dlog), :obstacles)
-    # HACK: save last chunk of train chain
-    Gen_Compose.report_step!(dlog, c)
-    return marginal
-end
-
-function marginalize(bfr, key)
-    n = length(bfr)
-    @show n
-    @assert n > 0
-    marginal = similar(bfr[1][key])
-    fill!(marginal, 0.0)
-    for i = 1:n
-        datum = bfr[i][key]
-        for j = eachindex(marginal)
-            marginal[j] += datum[j]
-        end
-    end
-    lmul!(1.0 / n, marginal)
-end
-
-function test(marginal, proc, query, out)
-    _..., mp, var = proc.ddp_args
-    p = setproperties(proc; ddp_args = (marginal, mp, var))
-    dlog = JLD2Logger(p.samples, out)
-    run_chain(p, query, p.samples + 1, dlog)
-    return nothing
-end
-
 
 function main(c=ARGS)
     args = parse_commandline(c)
@@ -146,49 +119,70 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
-    for door = [1, 2]
-        out_path = "/spaths/experiments/$(dataset)_$(model)/$(scene)_$(door)"
+    doors = [2]
+
+    for door = doors
+        out_path = "/spaths/experiments/flicker_$(dataset)_$(model)/$(scene)_$(door)"
+        if args["reverse"]
+            out_path *= "_reversed"
+        end
 
         base_p = joinpath(base_path, "$(scene)_$(door).json")
-        train_room = load_scene(base_p)
-        test_room = block_tile(train_room, tile)
+        room1 = load_scene(base_p)
+        room2 = block_tile(room1, tile)
 
-        gm_params = QuadTreeModel(train_room;
+        gm_params = QuadTreeModel(room1;
                                   read_json(args["gm"])...,
                                   render_kwargs =
-                                      Dict(:resolution => (256,256)))
+                                      Dict(:resolution => (128,128)))
 
         println("Saving results to: $(out_path)")
 
-        train_query = query_from_params(train_room, gm_params)
-        test_query = query_from_params(test_room, gm_params)
+        dargs = read_json(args["decision"])
 
-        train_proc_kwargs = read_json(args["proc"])
-        test_proc_kwargs = deepcopy(train_proc_kwargs)
-        test_proc_kwargs[:samples] = 10
+        q1 = query_from_params(room1, gm_params)
+        q2 = query_from_params(room2, gm_params)
+
+
+        model_params = first(q1.args)
+        img = GranularScenes.render(model_params.renderer, room1)
+        ddp_params = DataDrivenState(;config_path = args["ddp"],
+                                     var = 0.25)
+
+
+        proc_1_kwargs = read_json(args["proc"])
+        proc_2_kwargs = deepcopy(proc_1_kwargs)
+
+        proc_1_kwargs[:ddp]  = generate_cm_from_ddp
+        proc_1_kwargs[:ddp_args] = (ddp_params, img, model_params, 3, 3)
+        proc_2_kwargs[:ddp]  = generate_cm_from_ddp
+        proc_2_kwargs[:ddp_args] = (ddp_params, img, model_params, 3, 3)
+
 
         protocol = attention == :ac ?
             AdaptiveComputation() : UniformProtocol()
-        train_proc_kwargs[:protocol] =
-            test_proc_kwargs[:protocol] = protocol
+        proc_1_kwargs[:protocol] =
+            proc_2_kwargs[:protocol] = protocol
 
 
         if granularity == :fixed
-            train_proc_kwargs[:ddp] = fixed_granularity_cm
-            train_proc_kwargs[:ddp_args] = (gm_params, 5) # HACK: hard coded
-            test_proc_kwargs[:ddp] = generate_cm_from_ppd
-            test_proc_kwargs[:ddp_args] = (gm_params,
+            # TODO: Update this branch
+            proc_1_kwargs[:ddp] = fixed_granularity_cm
+            proc_1_kwargs[:ddp_args] = (gm_params, 5) # HACK: hard coded
+            proc_2_kwargs[:ddp] = generate_cm_from_ppd
+            proc_2_kwargs[:ddp_args] = (gm_params,
                                            0.0) # 0 var forces max split
             # No split-merge moves
-            train_proc_kwargs[:sm_budget] =
-                test_proc_kwargs[:sm_budget] = 0
-        else
-            test_proc_kwargs[:ddp] = generate_cm_from_ppd
-            test_proc_kwargs[:ddp_args] = (gm_params,
-                                           0.0175)
+            proc_1_kwargs[:sm_budget] =
+                proc_2_kwargs[:sm_budget] = 0
+        # REVIEW: no longer needed?
+        # else
+        #     proc_2_kwargs[:ddp] = generate_cm_from_ppd
+        #     proc_2_kwargs[:ddp_args] = (gm_params,
+        #                                    0.0175)
         end
-        train_proc = AdaptiveMH(; train_proc_kwargs...)
-        test_proc = AdaptiveMH(; test_proc_kwargs...)
+        proc_1 = AdaptiveMH(; proc_1_kwargs...)
+        proc_2 = AdaptiveMH(; proc_2_kwargs...)
 
         try
             isdir("/spaths/experiments/$(dataset)_$(model)") ||
@@ -203,8 +197,7 @@ function main(c=ARGS)
             # Random.seed!(c)
             c1_out = joinpath(out_path, "c1_$(c).jld2")
             c2_out = joinpath(out_path, "c2_$(c).jld2")
-            c3_out = joinpath(out_path, "c3_$(c).jld2")
-            outs = [c1_out, c2_out, c3_out]
+            outs = [c1_out, c2_out]
             complete = false
             if any(isfile, outs)
                 println("Record(s) found for chain: $(c)")
@@ -217,9 +210,24 @@ function main(c=ARGS)
             end
             if !complete
                 println("Starting chain $c")
-                trained = train(train_proc, train_query, c1_out)
-                test(trained, test_proc, test_query, c2_out)
-                test(trained, test_proc, train_query, c3_out)
+                chain_steps = dargs[:epoch_steps] * dargs[:epochs]
+                log1 = MemLogger(dargs[:margin_size])
+                log2 = MemLogger(dargs[:margin_size])
+                c1 = Gen_Compose.initialize_chain(proc_1, q1, chain_steps)
+                c2 = Gen_Compose.initialize_chain(proc_2, q2, chain_steps)
+                e = 1; klm = zeros(16, 16); max_kl = 0.0; cidx = CartesianIndex(0, 0);
+                while e < dargs[:epochs] && max_kl < dargs[:kl_threshold]
+                    (klm, max_kl, cidx, eloc) =
+                        search_step!(c1, c2, log1, log2,
+                                     dargs[:epoch_steps],
+                                     dargs[:search_weight])
+                    e += 1
+                end
+                # println("Inference END")
+                # GranularScenes.viz_chain(c1)
+                # GranularScenes.viz_chain(c2)
+                # println("Expected $(eloc); Max KL: $(max_kl), @ index $(cidx)")
+                # GranularScenes.display_mat(klm)
             end
             println("Chain $(c) complete")
         end

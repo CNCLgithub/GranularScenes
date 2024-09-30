@@ -102,7 +102,7 @@ end
 
 @with_kw struct AdaptiveComputation <: AttentionProtocol
     # Goal driven belief
-    objective::Function = qt_path_cost
+    objective::Function = quad_tree_path
     # destance metrics for two task objectives
     distance::Function = (x, y) -> norm(x - y)
 
@@ -117,65 +117,53 @@ mutable struct AdaptiveAux <: AuxillaryState
     objective::Any
     accepts::Int64
     steps::Int64
-    sensitivities::Matrix{Float64}
+    gr::Matrix{Float64}
     queue::PriorityQueue{Int64, Float64, ReverseOrdering}
 end
 
 function AuxState(p::AdaptiveComputation, trace)
     dims = first(get_args(trace)).dims
     ndims = prod(dims)
-    sensitivities = zeros(dims)
+    gr = fill(-Inf, dims)
     queue = init_queue(trace)
     AdaptiveAux(0., 0., 0., 0, 0,
-                sensitivities,
+                gr,
                 queue)
 end
 
 accepts(aux::AdaptiveAux) = aux.accepts
 
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
-
     ks = collect(keys(aux.queue))
     ws = collect(values(aux.queue))
-
-    clamp!(ws, -100, Inf)
-    ws = softmax(ws, 1.0)
-    stop = 0.0
-    node = 0
-    gr = 0.0
+    # clamp!(ws, -100, Inf)
+    ws = softmax(ws, 1.0) # TODO: add as hyperparameter
     nidx = categorical(ws)
     node = ks[nidx]
-    gr = aux.queue[node]
-    if bernoulli(0.1)
-        node = rand(keys(aux.queue))
-        gr = aux.queue[node]
-    end
-    # println("Adaptive Protocol: node $(node), relevance $(gr)")
-    # i = 1
-    # for kv = aux.queue
-    #     i > 3 && break
-    #     println("\t $(kv) | $(ws[i])")
-    #     i += 1
-    # end
-
-    node
+    # println("Selected node: $(node); GR: $(aux.queue[node])")
+    return node
 end
 
 function rw_block_init!(aux::AdaptiveAux, p::AdaptiveComputation,
                         trace)
     aux.accepts = 0
-    aux.delta_pi = 0.0
-    aux.delta_s = 0.0
+    aux.delta_pi = -100
+    aux.delta_s = -100
     aux.objective = p.objective(trace)
     return nothing
 end
 
 function rw_block_inc!(aux::AdaptiveAux, p::AdaptiveComputation,
                        t, node, alpha)
-    obj_t_prime = p.objective(t)
-    aux.delta_pi += p.distance(aux.objective, obj_t_prime)
+    # obj_t_prime = p.objective(t)
+    # aux.delta_pi += p.distance(aux.objective, obj_t_prime)
+    inc_delta_pi = delta_pi(aux.objective, t)
+    if inc_delta_pi > 100
+        viz_node(t, node)
+    end
+    aux.delta_pi = logsumexp(aux.delta_pi, inc_delta_pi)
     # ds = alpha < -20 ? 0.0 : exp(alpha)
-    aux.delta_s = logsumexp(aux.delta_s, alpha)
+    aux.delta_s = logsumexp(aux.delta_s, min(0.0, alpha))
     # aux.delta_s += exp(min(0.0, alpha))
     # aux.delta_s += -0.01
     aux.steps += 1
@@ -199,23 +187,23 @@ end
 
 function rw_block_complete!(aux::AdaptiveAux,
                             p::AdaptiveComputation,
-                            t, node)
+                            t::Gen.Trace, n::Int)
     # compute goal-relevance
     @unpack delta_pi, delta_s, steps, accepts = aux
-    delta_pi = log(delta_pi) - log(steps)
-    delta_s = delta_s - log(steps)
-    goal_relevance = delta_pi + delta_s
-    # goal_relevance = log(delta_pi) + log(delta_s) - 2 * log(steps)
-
-    # update aux state
-    # qt = get_retval(t)
-    # prod_node = traverse_qt(qt, node).node
-    # sidx = node_to_idx(prod_node, max_leaves(qt))
-    # for i = sidx
-    #     aux.sensitivities[i] = goal_relevance
-    # end
-    aux.queue[node] = goal_relevance
-    accept_ratio = accepts / steps
+    goal_relevance = delta_pi + delta_s - log(steps)
+    # println("NODE: $(n)")
+    # @show delta_pi
+    # @show delta_s
+    # @show goal_relevance
+    # update aux state records
+    qt = get_retval(t)
+    prod_node = node(traverse_qt(qt, n))
+    sidx = node_to_idx(prod_node, max_leaves(qt))
+    for i = sidx
+        aux.gr[i] = goal_relevance
+    end
+    aux.queue[n] = goal_relevance
+    # accept_ratio = accepts / steps
     # println("\t $(delta_pi) + $(delta_s) | AR=$(accept_ratio)")
     return nothing
 end
@@ -226,14 +214,22 @@ function sm_block_init!(aux::AdaptiveAux, p::AdaptiveComputation)
     return nothing
 end
 
+function sm_block_accept!(aux::AdaptiveAux, n::Int)
+    aux.accepts += 1
+    return nothing
+end
+
 function sm_block_accept!(aux::AdaptiveAux, node, move)
     aux.accepts += 1
     update_queue!(aux.queue, node, move)
+    return nothing
 end
 
 function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
-                            node, move)
-    # println("Accepted move $(move) on node $(node)")
+                            tr::Gen.Trace,
+                            n::Int)
+    update_queue!(aux.queue, aux.gr, tr)
+    # println("Accepted involutive increment for $(n)")
     return nothing
 end
 
@@ -288,4 +284,32 @@ function update_queue!(queue, node::Int64, move::Merge)
     end
     queue[parent] = prev_val # * 0.25
     return nothing
+end
+
+function update_queue!(queue, gr::Matrix{Float64},
+                       tr::Gen.Trace)
+    qt = get_retval(tr)
+    ml = max_leaves(qt)
+    empty!(queue)
+    for l = qt.leaves
+        nde = node(l)
+        idx = tree_idx(nde)
+        mat_idxs = node_to_idx(nde, ml)
+        queue[idx] = mean(gr[mat_idxs])
+    end
+    return nothing
+end
+
+function viz_node(tr, node::Int64)
+    qt = get_retval(tr)
+    n = max_leaves(qt)
+    leaves = qt.leaves
+    m = Matrix{Bool}(undef, n, n)
+    fill!(m, false)
+    v = leaf_from_idx(qt, node).node
+    for idx = node_to_idx(v, n)
+        m[idx] = true
+    end
+    println("Selected node")
+    display_mat(m)
 end

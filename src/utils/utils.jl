@@ -21,13 +21,21 @@ export save_img_array,
 # Visuals
 #################################################################################
 
+function draw_mat(m::Matrix,
+                  rotate::Bool = true,
+                  c1=colorant"black",
+                  c2=colorant"white")
+    m = clamp.(m, 0.0, 1.0)
+    img = weighted_color_mean.(m, c2, c1)
+    img = rotate ? rotr90(img, 3) : img
+    return img
+end
+
 function display_mat(m::Matrix;
                      rotate::Bool = true,
                      c1=colorant"black",
                      c2=colorant"white")
-    img = weighted_color_mean.(m, c2, c1)
-    img = rotate ? rotr90(img, 3) : img
-    display(img)
+    display(draw_mat(m, rotate, c1, c2))
     return nothing
 end
 

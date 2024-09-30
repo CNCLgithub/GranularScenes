@@ -46,8 +46,8 @@ function build(r::GridRoom;
 
     # sample obstacles
     # TODO: rename "furniture*" -> "obstacles*"
-    with_furn = furniture_gm(r, vmap, max_f, max_size)
-    result = expand(with_furn, factor)
+    result = furniture_gm(r, vmap, max_f, max_size)
+    # result = expand(with_furn, factor)
     clear_wall(result)
 end
 
@@ -73,10 +73,10 @@ end
 
 function main()
     # Parameters
-    # name = "ddp_train_11f_32x32"
-    # n = 5000
-    name = "ddp_test_11f_32x32"
-    n = 16
+    name = "ddp_train_11f_32x32"
+    n = 10000
+    # name = "ddp_test_11f_32x32"
+    # n = 16
 
     hn = Int(n // 2)
     room_dims = (16., 16.)
@@ -97,32 +97,32 @@ function main()
     m = Dict(
         :n => n,
         :templates => templates,
-        :og_shape => (32, 32),
+        :og_shape => room_bins,
         :img_res => IMG_RES
     )
     out = "/spaths/datasets/$(name)"
     isdir(out) || mkdir(out)
 
     template = templates[1]
-    ti_scene = TaichiScene(expand(template, 2);
-                               resolution = IMG_RES)
+    ti_scene = TaichiScene(template;
+                           resolution = IMG_RES)
     for i = 1:hn
         r = build(template)
         occ = occupancy_position(r)
         # select mitsuba scene
-        @time _mu = GranularScenes.render(ti_scene, r)
+        _mu = GranularScenes.render(ti_scene, r)
         img = @pycall _mu.to_numpy()::Array
         save_trial(out, i, r, img, occ)
     end
 
     template = templates[2]
-    ti_scene = TaichiScene(expand(template, 2);
-                               resolution = IMG_RES)
+    ti_scene = TaichiScene(template;
+                           resolution = IMG_RES)
     for i = hn:n
         r = build(template)
         occ = occupancy_position(r)
         # select mitsuba scene
-        @time _mu = GranularScenes.render(ti_scene, r)
+        _mu = GranularScenes.render(ti_scene, r)
         img = @pycall _mu.to_numpy()::Array
         save_trial(out, i, r, img, occ)
     end

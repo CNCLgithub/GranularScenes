@@ -24,6 +24,7 @@ end
     ref_idx = st.node.tree_idx
     # println("target: $(i), actual; $(ref_idx)")
     @assert ref_idx == i || ref_idx == Gen.get_parent(i, 4)
+
     # assuming that `i` is referencing a "balanced" node
     split = isempty(st.children)
     # splitting
@@ -95,3 +96,48 @@ end
 end
 
 is_involution!(qt_involution)
+
+
+@gen function qt_branch_proposal(t::Gen.Trace, i::Int64)
+    qt::QuadTree = get_retval(t)
+    st::QTAggNode = traverse_qt(qt, i)
+    # `st` could be parent if t' is a result of merge
+    # since the original `i` would have been merged with its
+    # sibling in t
+    ref_idx = st.node.tree_idx
+    parent_idx = Gen.get_parent(i, 4)
+    isparent = ref_idx == parent_idx
+    # println("target: $(i); actual: $(ref_idx); parent: $(parent_idx)")
+    @assert ref_idx == i || isparent
+
+    parent = isparent ? st : traverse_qt(qt, parent_idx)
+    merge_weight = isparent ? 1.0 : dof(parent)
+
+    select_parent ~ bernoulli(merge_weight)
+
+    start_node = node(select_parent ? parent : st)
+    start_idx = tree_idx(start_node)
+    new_branch ~ quad_tree_prior(start_node, start_idx)
+    return (start_idx,)
+end
+
+
+function qt_involution_incremental(trace, fwd_choices::ChoiceMap, fwd_ret::Tuple, proposal_args::Tuple)
+
+    (subtree_idx, _...) = fwd_ret
+    model_args = get_args(trace)
+
+    # populate constraints
+    constraints = choicemap()
+    set_submap!(constraints, :trackers, get_submap(fwd_choices, :new_branch))
+
+    # obtain new trace and discard, which contains the previous subtree
+    (new_trace, weight, _, discard) = update(trace, model_args, (NoChange(),), constraints)
+
+    # populate backward assignment
+    bwd_choices = choicemap()
+    bwd_choices[:select_parent] = fwd_choices[:select_parent]
+    set_submap!(bwd_choices, :new_branch,
+                get_submap(discard, :trackers))
+    (new_trace, bwd_choices, weight)
+end
