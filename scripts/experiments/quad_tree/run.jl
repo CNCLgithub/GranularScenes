@@ -5,9 +5,11 @@ using Rooms
 using FileIO
 using ArgParse
 using Accessors
+using DataFrames
 using Gen_Compose
+using UnicodePlots
 using GranularScenes
-
+using StaticArrays: SVector
 
 function parse_commandline(c)
     s = ArgParseSettings()
@@ -96,7 +98,18 @@ function block_tile(r::GridRoom, tidx::Int)
     d[tidx] = obstacle_tile
     cidx = CartesianIndices(Rooms.steps(r))[tidx]
     println("Blocked tile at location $(cidx)")
-    GridRoom(r, d)
+    (GridRoom(r, d), cidx)
+end
+
+function loc_error(a::CartesianIndex{2}, b::SVector{2, Float64}, max_kl::Float64)
+    dx = a.I[1] - b[1]
+    dy = a.I[2] - b[2]
+    sqrt(dx^2 + dy^2) # / max(max_kl, 0.02)
+end
+function loc_error(a::CartesianIndex{2}, b::CartesianIndex{2}, max_kl::Float64)
+    dx = a.I[1] - b.I[1]
+    dy = a.I[2] - b.I[2]
+    sqrt(dx^2 + dy^2) / max(max_kl, 0.02)
 end
 
 function main(c=ARGS)
@@ -119,7 +132,15 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
-    doors = [2]
+    doors = [1]
+
+    results = DataFrame(
+        :door => Int64[],
+        :step => Int64[],
+        :avg_loc => Tuple{Float64, Float64}[],
+        :max_loc => Tuple{Float64, Float64}[],
+        :kl_prop => Float64[]
+    )
 
     for door = doors
         out_path = "/spaths/experiments/flicker_$(dataset)_$(model)/$(scene)_$(door)"
@@ -129,7 +150,7 @@ function main(c=ARGS)
 
         base_p = joinpath(base_path, "$(scene)_$(door).json")
         room1 = load_scene(base_p)
-        room2 = block_tile(room1, tile)
+        room2, blocked_idx = block_tile(room1, tile)
 
         gm_params = QuadTreeModel(room1;
                                   read_json(args["gm"])...,
@@ -148,16 +169,15 @@ function main(c=ARGS)
         img = GranularScenes.render(model_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
                                      var = 0.25)
+        ddp_cm = generate_cm_from_ddp(ddp_params, img, model_params, 3, 3)
 
 
         proc_1_kwargs = read_json(args["proc"])
         proc_2_kwargs = deepcopy(proc_1_kwargs)
 
-        proc_1_kwargs[:ddp]  = generate_cm_from_ddp
-        proc_1_kwargs[:ddp_args] = (ddp_params, img, model_params, 3, 3)
-        proc_2_kwargs[:ddp]  = generate_cm_from_ddp
-        proc_2_kwargs[:ddp_args] = (ddp_params, img, model_params, 3, 3)
-
+        # HACK: Instead, rework `AdaptiveMH` or right-hand of query
+        proc_1_kwargs[:ddp]  = (_...) -> deepcopy(ddp_cm)
+        proc_2_kwargs[:ddp]  = (_...) -> deepcopy(ddp_cm)
 
         protocol = attention == :ac ?
             AdaptiveComputation() : UniformProtocol()
@@ -215,23 +235,31 @@ function main(c=ARGS)
                 log2 = MemLogger(dargs[:margin_size])
                 c1 = Gen_Compose.initialize_chain(proc_1, q1, chain_steps)
                 c2 = Gen_Compose.initialize_chain(proc_2, q2, chain_steps)
-                e = 1; klm = zeros(16, 16); max_kl = 0.0; cidx = CartesianIndex(0, 0);
+                e = 1; max_kl = 0.0; klm = zeros(16, 16);
                 while e < dargs[:epochs] && max_kl < dargs[:kl_threshold]
                     (klm, max_kl, cidx, eloc) =
                         search_step!(c1, c2, log1, log2,
                                      dargs[:epoch_steps],
                                      dargs[:search_weight])
+                    push!(results, (door, e * dargs[:epoch_steps],
+                                    Tuple(eloc), Tuple(cidx),
+                                    loc_error(blocked_idx, eloc, max_kl)))
                     e += 1
                 end
-                # println("Inference END")
-                # GranularScenes.viz_chain(c1)
-                # GranularScenes.viz_chain(c2)
-                # println("Expected $(eloc); Max KL: $(max_kl), @ index $(cidx)")
-                # GranularScenes.display_mat(klm)
+                GranularScenes.viz_chain(log1)
+                GranularScenes.viz_chain(log2)
+                GranularScenes.display_mat(klm)
             end
             println("Chain $(c) complete")
         end
     end
+    # filter!(:step => >(20), results) # remove burnin
+    # left_df, right_df = groupby(results, :door)
+    # plt = lineplot(left_df.step, left_df.kl_prop; name = "Left door")
+    # # lineplot!(plt, right_df.step, right_df.kl_prop; name = "Right door")
+    # # display(plt)
+    # display(last(left_df, 3))
+    # # display(last(right_df, 3))
     return nothing
 end
 

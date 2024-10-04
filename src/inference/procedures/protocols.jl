@@ -137,7 +137,8 @@ function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
     ks = collect(keys(aux.queue))
     ws = collect(values(aux.queue))
     # clamp!(ws, -100, Inf)
-    ws = softmax(ws, 1.0) # TODO: add as hyperparameter
+    ws = softmax(ws, 0.01) # TODO: add as hyperparameter
+    @show ws
     nidx = categorical(ws)
     node = ks[nidx]
     # println("Selected node: $(node); GR: $(aux.queue[node])")
@@ -190,9 +191,11 @@ function rw_block_complete!(aux::AdaptiveAux,
                             t::Gen.Trace, n::Int)
     # compute goal-relevance
     @unpack delta_pi, delta_s, steps, accepts = aux
-    goal_relevance = delta_pi + delta_s - log(steps)
-    # println("NODE: $(n)")
-    # @show delta_pi
+    # goal_relevance = delta_pi + delta_s - log(steps)
+    goal_relevance = delta_pi - log(steps)
+    println("NODE: $(n)")
+    @show delta_pi
+    viz_node(t, n)
     # @show delta_s
     # @show goal_relevance
     # update aux state records
@@ -200,7 +203,7 @@ function rw_block_complete!(aux::AdaptiveAux,
     prod_node = node(traverse_qt(qt, n))
     sidx = node_to_idx(prod_node, max_leaves(qt))
     for i = sidx
-        aux.gr[i] = goal_relevance
+        aux.gr[i] = goal_relevance - log(length(sidx))
     end
     aux.queue[n] = goal_relevance
     # accept_ratio = accepts / steps
@@ -229,21 +232,29 @@ function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
                             tr::Gen.Trace,
                             n::Int)
     update_queue!(aux.queue, aux.gr, tr)
+    qt = get_retval(tr)
+    ml = max_leaves(qt)
+    nde = node(traverse_qt(qt, ml))
+    idx = tree_idx(nde)
+    mat_idxs = node_to_idx(nde, ml)
+    @show aux.gr[mat_idxs]
+    @show aux.queue[idx]
     # println("Accepted involutive increment for $(n)")
     return nothing
 end
 
 function attention_map(aux::AdaptiveAux, t::Gen.Trace)
-    qt = get_retval(t)
-    n = max_leaves(qt)
-    amap = Matrix{Float32}(undef, n, n)
-    for x in qt.leaves
-        idxs = node_to_idx(x.node, n)
-        v = aux.queue[x.node.tree_idx]
-        for i = idxs
-            amap[i] = v
-        end
-    end
+    amap = Matrix{Float32}(aux.gr)
+    # qt = get_retval(t)
+    # n = max_leaves(qt)
+    # amap = Matrix{Float32}(undef, n, n)
+    # for x in qt.leaves
+    #     idxs = node_to_idx(x.node, n)
+    #     v = aux.queue[x.node.tree_idx]
+    #     for i = idxs
+    #         amap[i] = v
+    #     end
+    # end
     return amap
 end
 
@@ -295,7 +306,7 @@ function update_queue!(queue, gr::Matrix{Float64},
         nde = node(l)
         idx = tree_idx(nde)
         mat_idxs = node_to_idx(nde, ml)
-        queue[idx] = mean(gr[mat_idxs])
+        queue[idx] = logsumexp(gr[mat_idxs])
     end
     return nothing
 end

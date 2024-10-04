@@ -1,4 +1,4 @@
-export DataDrivenState, dd_state_proposal,
+export DataDrivenState,
     generate_cm_from_ddp
 
 using Statistics: std
@@ -21,9 +21,6 @@ function _init_dd_state(config_path::String, device::PyObject)
     return nn
 end
 
-
-# proposal and involution here
-include("gen.jl")
 
 # Function used to initialize the chain under `mcmc::kernel_init!`
 function ddp_init_kernel(trace::Gen.Trace, prop_args::Tuple)
@@ -68,8 +65,8 @@ function generate_cm_from_ddp(ddp_params::DataDrivenState,
     img = process_ddp_input(timg, device)
     x = @pycall nn.forward(img)::PyObject
     state = @pycall x.detach().squeeze(0).cpu().numpy()::Matrix{Float64}
-    println("Data-driven state")
-    display_mat(state)
+    # println("Data-driven state")
+    # display_mat(state)
     head = model_params.start_node
     d = model_params.dims[2]
     # Iterate through QT

@@ -4,6 +4,7 @@ using Colors
 using ImageIO
 using ImageCore: colorview
 using ImageInTerminal
+using LinearAlgebra: lmul!
 
 export save_img_array,
     softmax,
@@ -120,6 +121,21 @@ end
 #     isnan(sxs) || iszero(sxs) ? fill(1.0/n, n) : exs ./ sxs
 # end
 
+
+function marginalize(bfr, key::Symbol)
+    n = length(bfr)
+    # @show n
+    @assert n > 0
+    marginal = similar(bfr[1][key], Float64)
+    fill!(marginal, 0.0)
+    for i = 1:n
+        datum = bfr[i][key]
+        for j = eachindex(marginal)
+            marginal[j] += datum[j]
+        end
+    end
+    lmul!(1.0 / n, marginal)
+end
 
 function softmax(x::Array{Float64}, t::Float64 = 1.0)
     out = similar(x)

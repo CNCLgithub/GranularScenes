@@ -47,6 +47,7 @@ function delta_pi(plan::Tuple, t_prime::Gen.Trace)
     cost_prime, path_prime = quad_tree_path(t_prime)
     cross_cost = quad_tree_cross_cost(t_prime, path)
     total = log(abs(cost_prime - cost) + abs(cost - cross_cost))
+    @show total
     # @show cost
     # @show cost_prime
     # @show cross_cost

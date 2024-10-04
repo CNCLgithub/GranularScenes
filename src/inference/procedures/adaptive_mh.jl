@@ -53,8 +53,8 @@ function Gen_Compose.initialize_chain(proc::AdaptiveMH,
                            query.args,
                            constraints)
 
-    println("Initial state")
-    display_mat(project_qt(get_retval(trace)))
+    # println("Initial state")
+    # display_mat(project_qt(get_retval(trace)))
 
     # initialize auxillary state
     aux = AuxState(proc.protocol, trace)
@@ -167,6 +167,21 @@ function inner_rw_moves!(aux, p, t, w, m, i, steps = 3)
 end
 
 
+function viz_chain(log::ChainLogger)
+    bfr = buffer(log)
+    println("\n\nInferred state + Path + Attention")
+    geo = draw_mat(marginalize(bfr, :obstacles),
+                   true, colorant"black", colorant"blue")
+    # println("Estimated path")
+    pth = draw_mat(marginalize(bfr, :path),
+                   true, colorant"black", colorant"green")
+    attm = marginalize(bfr, :attention)
+    attm = softmax(attm, 0.01)
+    lmul!(1.0 / maximum(attm), attm)
+    att = draw_mat(attm,
+                   true, colorant"black", colorant"red")
+    display(reduce(hcat, [geo, pth, att]))
+end
 function viz_chain(chain::AMHChain)
     # chain.step % 10 == 0 || return nothing
     @unpack auxillary, state = chain

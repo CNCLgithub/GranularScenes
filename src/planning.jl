@@ -13,13 +13,13 @@ function search_step!(c1::AMHChain, c2::AMHChain,
     eloc = expected_loc(klm)
     result = (klm, max_d, c, eloc)
     weight = search_weight # * Gen_Compose.step(c1)
-    update_deltapi!(c1, dpi_kl, weight)
-    update_deltapi!(c2, dpi_kl, weight)
-    viz_chain(c1)
-    viz_chain(c2)
-    println("Expected $(eloc); Max KL: $(max_d), @ index $(c)")
-    @show weight
-    display_mat(klm)
+    # update_deltapi!(c1, dpi_kl, weight)
+    # update_deltapi!(c2, dpi_kl, weight)
+    viz_chain(l1)
+    viz_chain(l2)
+    # println("Expected $(eloc); Max KL: $(max_d), @ index $(c)")
+    # @show weight
+    # display_mat(klm)
     return result
 end
 
@@ -65,7 +65,7 @@ function test(m1::Matrix, m2::Matrix)
     end
     prop_d = max_d / sum_d
     lmul!(1.0 / max_d, klm)
-    (klm, prop_d, c, dpi)
+    (klm, max_d, c, dpi)
 end
 
 function kl(p::Real, q::Real)
@@ -77,29 +77,17 @@ end
 
 kl_wgrad(p::Real, q::Real) = withgradient(kl, p, q)
 
-function marginalize(bfr, key::Symbol)
-    n = length(bfr)
-    # @show n
-    @assert n > 0
-    marginal = similar(bfr[1][key])
-    fill!(marginal, 0.0)
-    for i = 1:n
-        datum = bfr[i][key]
-        for j = eachindex(marginal)
-            marginal[j] += datum[j]
-        end
-    end
-    lmul!(1.0 / n, marginal)
-end
-
 function update_deltapi!(c::AMHChain, dpi_kl::Matrix, weight::Float64 = 1.0)
     aux = auxillary(c)
     state = estimate(c)
     lw = log(weight)
     @assert size(dpi_kl) == size(aux.gr)
     @inbounds for li = LinearIndices(dpi_kl)
+        # @show aux.gr[li]
+        # @show log(dpi_kl[li])
         aux.gr[li] =
             logsumexp(aux.gr[li], log(dpi_kl[li]) + lw)
+        # println("new aux.gr[li] $(aux.gr[li])")
     end
     update_queue!(aux.queue, aux.gr, state)
     return nothing
