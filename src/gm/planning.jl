@@ -1,4 +1,5 @@
 using DataStructures
+using Zygote: withgradient
 
 export QTPath,
     qt_a_star
@@ -98,6 +99,10 @@ function qt_a_star(qt::QuadTree, dw::Float64, ent::Int64, ext::Int64)
     g_score = Dict{Int64, Float64}()
     g_score[ent_idx] = 0
 
+
+    gradients = Dict{Int64, Float64}()
+    gradients[ent_idx] = 0 # REVIEW: value?
+
     came_from = Dict{Int64, Int64}()
     came_from[ent_idx] = ent_idx
 
@@ -110,6 +115,7 @@ function qt_a_star(qt::QuadTree, dw::Float64, ent::Int64, ext::Int64)
         closed_set,
         g_score,
         came_from,
+        gradients,
         heuristic,
         qt,
         dw
@@ -124,6 +130,7 @@ function qt_astar_impl!(
     closed_set, # an (initialized) color-map to indicate status of vertices
     g_score, # a vector holding g scores for each node
     came_from, # a vector holding the parent of each node in the A* exploration
+    gradients,
     heuristic,
     qt::QuadTree, dw::Float64)
 
@@ -137,7 +144,7 @@ function qt_astar_impl!(
         if current == goal
             reconstruct_path!(total_path, came_from, current)
             score = g_score[current]
-            return score, total_path
+            return score, total_path, gradients
         end
 
         push!(closed_set, current)
@@ -147,8 +154,11 @@ function qt_astar_impl!(
         for neighbor in adj
             in(neighbor, closed_set) && continue
             n_state = leaf_from_idx(qt, neighbor)
-            tentative_g_score = g_score[current] +
-                traversal_cost(cur_state, n_state, dw)
+            # tc = traversal_cost(cur_state, n_state, dw)
+            (tc, grad) = tcost_wgrad(cur_state, n_state, dw)
+            gradients[current] = get(gradients, current, 0.0) + grad
+            gradients[neighbor] = get(gradients, neighbor, 0.0) + grad
+            tentative_g_score = g_score[current] + tc
 
             if tentative_g_score < get(g_score, neighbor, Inf)
                 g_score[neighbor] = tentative_g_score
@@ -158,7 +168,7 @@ function qt_astar_impl!(
             end
         end
     end
-    return score, total_path
+    return score, total_path, gradients
 end
 
 function reconstruct_path!(
@@ -177,8 +187,13 @@ end
 
 function traversal_cost(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
     d = dist(node(dst), node(src))
-    # c = obs_cost * (weight(dst) * length(node(dst)) +
-    #     weight(src) * length(node(src)))
     c = obs_cost * (weight(dst) + weight(src))
-    d + c
+    d * c
+end
+
+function tcost_wgrad(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
+    cost, raw_grads = withgradient(traversal_cost, src, dst, obs_cost)
+    raw_grad = raw_grads[1]
+    grad = abs(raw_grad[:mu]) + norm(raw_grad[:node][:center])
+    return (cost, grad)
 end
