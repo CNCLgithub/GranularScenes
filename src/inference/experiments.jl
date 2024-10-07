@@ -23,10 +23,10 @@ function ex_granularity(c::AMHChain)
     m
 end
 
-function ex_path(c::AMHChain)
-    qt = get_retval(c.state)
+function ex_path(tr::Gen.Trace)
+    qt = get_retval(tr)
     n = max_leaves(qt)
-    cost, path = quad_tree_path(c.state)
+    cost, path = quad_tree_path(tr)
     leaves = qt.leaves
     m = Matrix{Bool}(undef, n, n)
     fill!(m, false)
@@ -37,6 +37,9 @@ function ex_path(c::AMHChain)
         end
     end
     m
+end
+function ex_path(c::AMHChain)
+    ex_path(c.state)
 end
 
 function ex_attention(c::AMHChain)
