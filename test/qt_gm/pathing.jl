@@ -15,10 +15,13 @@ using GranularScenes:
     ex_path,
     delta_pi,
     node,
-    tree_idx
+    tree_idx,
+    max_leaves,
+    leaf_from_idx,
+    node_to_idx
 
 using Random
-Random.seed!(1111)
+# Random.seed!(1101)
 
 dataset = "path_block_2024-03-14"
 
@@ -29,7 +32,19 @@ function load_base_scene(path::String)
     end
     base = from_json(GridRoom, base_s)
 end
-
+function draw_gradients(tr::Gen.Trace, grads::Dict{Int64, Float64})
+    qt = get_retval(tr)
+    n = max_leaves(qt)
+    leaves = qt.leaves
+    m = zeros((n, n))
+    for (i, v) = grads
+        node = leaf_from_idx(qt, i).node
+        for idx = node_to_idx(node, n)
+            m[idx] = v
+        end
+    end
+    display(draw_mat(m, true, colorant"black", colorant"red"))
+end
 function mytest()
 
     scene = 2
@@ -44,7 +59,7 @@ function mytest()
 
     @time plan = cost, path, grads = quad_tree_path(tr)
     @show path
-    display(grads)
+    draw_gradients(tr, grads)
 
     # qt = get_retval(tr)
     # println("\n\nInferred state + Path + Attention")
@@ -54,9 +69,9 @@ function mytest()
     # pth = draw_mat(path, true, colorant"black", colorant"green")
     # display(reduce(hcat, [geo, pth]))
 
-    tprime, _ = rw_move(tr, 13)
-    plan = cost, path, grads = quad_tree_path(tprime)
-    display(grads)
+    # tprime, _ = rw_move(tr, 13)
+    # plan = cost, path, grads = quad_tree_path(tprime)
+    # draw_gradients(tprime, grads)
 
     # for lf = qt.leaves
     #     idx = tree_idx(node(lf))
