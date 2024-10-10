@@ -109,7 +109,7 @@ end
 function loc_error(a::CartesianIndex{2}, b::CartesianIndex{2}, max_kl::Float64)
     dx = a.I[1] - b.I[1]
     dy = a.I[2] - b.I[2]
-    sqrt(dx^2 + dy^2) / max(max_kl, 0.02)
+    sqrt(dx^2 + dy^2) # / max(max_kl, 0.02)
 end
 
 function main(c=ARGS)
@@ -132,7 +132,7 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
-    doors = [1]
+    doors = [1, 2]
 
     results = DataFrame(
         :door => Int64[],
@@ -243,7 +243,7 @@ function main(c=ARGS)
                                      dargs[:search_weight])
                     push!(results, (door, e * dargs[:epoch_steps],
                                     Tuple(eloc), Tuple(cidx),
-                                    loc_error(blocked_idx, eloc, max_kl)))
+                                    loc_error(blocked_idx, cidx, 1.0)))
                     e += 1
                 end
                 GranularScenes.viz_chain(log1)
@@ -253,13 +253,14 @@ function main(c=ARGS)
             println("Chain $(c) complete")
         end
     end
-    # filter!(:step => >(20), results) # remove burnin
-    # left_df, right_df = groupby(results, :door)
-    # plt = lineplot(left_df.step, left_df.kl_prop; name = "Left door")
-    # # lineplot!(plt, right_df.step, right_df.kl_prop; name = "Right door")
-    # # display(plt)
-    # display(last(left_df, 3))
-    # # display(last(right_df, 3))
+    filter!(:step => >(20), results) # remove burnin
+    left_df, right_df = groupby(results, :door)
+    plt = lineplot(left_df.step, left_df.kl_prop; name = "Left door",
+                   ylim = (0, 5))
+    lineplot!(plt, right_df.step, right_df.kl_prop; name = "Right door")
+    display(plt)
+    display(last(left_df, 3))
+    display(last(right_df, 3))
     return nothing
 end
 

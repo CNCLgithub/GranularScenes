@@ -1,7 +1,7 @@
 {
-    "epoch_steps": 5,
-    "epochs": 10,
-    "margin_size": 50,
+    "epoch_steps": 3,
+    "epochs": 30,
+    "margin_size": 20,
     "kl_threshold": 100.0,
-    "search_weight": 0.000000001
+    "search_weight": 0.5
 }

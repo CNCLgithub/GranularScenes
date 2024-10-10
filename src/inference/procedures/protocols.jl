@@ -135,10 +135,8 @@ accepts(aux::AdaptiveAux) = aux.accepts
 
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
     ks = collect(keys(aux.queue))
-    ws = collect(values(aux.queue))
-    # clamp!(ws, -100, Inf)
-    ws = softmax(ws, 0.01) # TODO: add as hyperparameter
-    @show ws
+    raw = collect(values(aux.queue))
+    ws = softmax(raw, 3.) # TODO: add as hyperparameter
     nidx = categorical(ws)
     node = ks[nidx]
     # println("Selected node: $(node); GR: $(aux.queue[node])")
@@ -158,15 +156,12 @@ function rw_block_inc!(aux::AdaptiveAux, p::AdaptiveComputation,
                        t, node, alpha)
     # obj_t_prime = p.objective(t)
     # aux.delta_pi += p.distance(aux.objective, obj_t_prime)
-    inc_delta_pi = delta_pi(aux.objective, t)
-    if inc_delta_pi > 100
-        viz_node(t, node)
-    end
-    aux.delta_pi = logsumexp(aux.delta_pi, inc_delta_pi)
-    # ds = alpha < -20 ? 0.0 : exp(alpha)
+    # inc_delta_pi = delta_pi(aux.objective, t)
+    # if inc_delta_pi > 100
+    #     viz_node(t, node)
+    # end
+    # aux.delta_pi = logsumexp(aux.delta_pi, inc_delta_pi)
     aux.delta_s = logsumexp(aux.delta_s, min(0.0, alpha))
-    # aux.delta_s += exp(min(0.0, alpha))
-    # aux.delta_s += -0.01
     aux.steps += 1
     return nothing
 end
@@ -177,7 +172,7 @@ function rw_block_accept!(aux::AdaptiveAux,
                           t::Gen.Trace, node)
     aux.accepts += 1
     # aux.delta_s += 0.01
-    aux.objective = p.objective(t)
+    # aux.objective = p.objective(t)
     return nothing
 end
 
@@ -190,22 +185,22 @@ function rw_block_complete!(aux::AdaptiveAux,
                             p::AdaptiveComputation,
                             t::Gen.Trace, n::Int)
     # compute goal-relevance
-    @unpack delta_pi, delta_s, steps, accepts = aux
-    # goal_relevance = delta_pi + delta_s - log(steps)
-    goal_relevance = delta_pi - log(steps)
-    println("NODE: $(n)")
-    @show delta_pi
-    viz_node(t, n)
-    # @show delta_s
-    # @show goal_relevance
+    @unpack delta_s, steps, accepts = aux
+    delta_s = delta_s - log(steps)
+    (_, _, delta_pi) = p.objective(t)
     # update aux state records
     qt = get_retval(t)
-    prod_node = node(traverse_qt(qt, n))
-    sidx = node_to_idx(prod_node, max_leaves(qt))
-    for i = sidx
-        aux.gr[i] = goal_relevance - log(length(sidx))
+    ml = max_leaves(qt)
+    for (i, dpi) = delta_pi
+        val = logsumexp(aux.queue[i], dpi) - log(2)
+        aux.queue[i] = val
+        prod_node = node(traverse_qt(qt, i))
+        sidx = node_to_idx(prod_node, ml)
+        for mi = sidx
+            aux.gr[mi] = val - log(length(sidx))
+        end
     end
-    aux.queue[n] = goal_relevance
+    aux.queue[n] += delta_s
     # accept_ratio = accepts / steps
     # println("\t $(delta_pi) + $(delta_s) | AR=$(accept_ratio)")
     return nothing
@@ -237,8 +232,8 @@ function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
     nde = node(traverse_qt(qt, ml))
     idx = tree_idx(nde)
     mat_idxs = node_to_idx(nde, ml)
-    @show aux.gr[mat_idxs]
-    @show aux.queue[idx]
+    # @show aux.gr[mat_idxs]
+    # @show aux.queue[idx]
     # println("Accepted involutive increment for $(n)")
     return nothing
 end
@@ -297,6 +292,7 @@ function update_queue!(queue, node::Int64, move::Merge)
     return nothing
 end
 
+# REVIEW: not used?
 function update_queue!(queue, gr::Matrix{Float64},
                        tr::Gen.Trace)
     qt = get_retval(tr)

@@ -176,7 +176,7 @@ function viz_chain(log::ChainLogger)
     pth = draw_mat(marginalize(bfr, :path),
                    true, colorant"black", colorant"green")
     attm = marginalize(bfr, :attention)
-    attm = softmax(attm, 0.01)
+    attm = softmax(attm, 3.)
     lmul!(1.0 / maximum(attm), attm)
     att = draw_mat(attm,
                    true, colorant"black", colorant"red")

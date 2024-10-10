@@ -12,11 +12,11 @@ function search_step!(c1::AMHChain, c2::AMHChain,
     (klm, max_d, c, dpi_kl) = test(m1, m2)
     eloc = expected_loc(klm)
     result = (klm, max_d, c, eloc)
-    weight = search_weight # * Gen_Compose.step(c1)
-    # update_deltapi!(c1, dpi_kl, weight)
-    # update_deltapi!(c2, dpi_kl, weight)
-    viz_chain(l1)
-    viz_chain(l2)
+    weight = search_weight
+    update_deltapi!(c1, dpi_kl, weight)
+    update_deltapi!(c2, dpi_kl, weight)
+    # viz_chain(l1)
+    # viz_chain(l2)
     # println("Expected $(eloc); Max KL: $(max_d), @ index $(c)")
     # @show weight
     # display_mat(klm)
