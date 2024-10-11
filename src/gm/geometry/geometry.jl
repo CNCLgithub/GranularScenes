@@ -303,6 +303,8 @@ struct QuadTree
     mapping::Dict{Int64, Int64}
 end
 
+leaves(qt::QuadTree) = qt.leaves
+
 function QuadTree(root::QTAggNode)
     lvs = leaf_vec(root)
     mapping = leaf_mapping(lvs)
