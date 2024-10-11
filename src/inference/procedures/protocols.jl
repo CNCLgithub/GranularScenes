@@ -136,7 +136,7 @@ accepts(aux::AdaptiveAux) = aux.accepts
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
     ks = collect(keys(aux.queue))
     raw = collect(values(aux.queue))
-    ws = softmax(raw, 3.) # TODO: add as hyperparameter
+    ws = softmax(raw, 10.) # TODO: add as hyperparameter
     nidx = categorical(ws)
     node = ks[nidx]
     # println("Selected node: $(node); GR: $(aux.queue[node])")
@@ -189,15 +189,15 @@ function rw_block_complete!(aux::AdaptiveAux,
     delta_s = delta_s - log(steps)
     (_, _, delta_pi) = p.objective(t)
     # update aux state records
-    qt = get_retval(t)
+    qt = first(get_retval(t))
     ml = max_leaves(qt)
     for (i, dpi) = delta_pi
-        val = logsumexp(aux.queue[i], dpi) - log(2)
-        aux.queue[i] = val
+        # val = logsumexp(aux.queue[i], dpi) - log(2)
+        aux.queue[i] = dpi
         prod_node = node(traverse_qt(qt, i))
         sidx = node_to_idx(prod_node, ml)
         for mi = sidx
-            aux.gr[mi] = val - log(length(sidx))
+            aux.gr[mi] = dpi - log(length(sidx))
         end
     end
     aux.queue[n] += delta_s
@@ -227,7 +227,7 @@ function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
                             tr::Gen.Trace,
                             n::Int)
     update_queue!(aux.queue, aux.gr, tr)
-    qt = get_retval(tr)
+    qt = first(get_retval(tr))
     ml = max_leaves(qt)
     nde = node(traverse_qt(qt, ml))
     idx = tree_idx(nde)
@@ -258,7 +258,7 @@ end
 #################################################################################
 
 function init_queue(tr::Gen.Trace)
-    qt = get_retval(tr)
+    qt = first(get_retval(tr))
     q = PriorityQueue{Int64, Float64, ReverseOrdering}(Reverse)
     # go through the current set of terminal nodes
     # and intialize priority
@@ -295,7 +295,7 @@ end
 # REVIEW: not used?
 function update_queue!(queue, gr::Matrix{Float64},
                        tr::Gen.Trace)
-    qt = get_retval(tr)
+    qt = first(get_retval(tr))
     ml = max_leaves(qt)
     empty!(queue)
     for l = qt.leaves

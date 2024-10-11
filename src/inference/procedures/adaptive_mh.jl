@@ -43,7 +43,8 @@ function Gen_Compose.initialize_chain(proc::AdaptiveMH,
                                       n::Int)
     # Intialize using DDP
     constraints = proc.ddp(proc.ddp_args...)
-    constraints[:pixels] = query.observations[:pixels]
+    constraints[:img_a] = query.observations[:img_a]
+    constraints[:img_b] = query.observations[:img_b]
     # if has_submap(query.observations, :pixels)
     #     set_submap!(constraints, :pixels,
     #                 get_submap(query.observations, :pixels))
@@ -176,17 +177,21 @@ function viz_chain(log::ChainLogger)
     pth = draw_mat(marginalize(bfr, :path),
                    true, colorant"black", colorant"green")
     attm = marginalize(bfr, :attention)
-    attm = softmax(attm, 3.)
+    attm = softmax(attm, 10.)
     lmul!(1.0 / maximum(attm), attm)
     att = draw_mat(attm,
                    true, colorant"black", colorant"red")
     display(reduce(hcat, [geo, pth, att]))
+    loc = marginalize(bfr, :change)
+    lmul!(1.0 / maximum(loc), loc)
+    display_mat(loc)
+    return nothing
 end
 function viz_chain(chain::AMHChain)
     # chain.step % 10 == 0 || return nothing
     @unpack auxillary, state = chain
     params = first(get_args(state))
-    qt = get_retval(state)
+    qt = first(get_retval(state))
     # println("Attention")
     # s = size(auxillary.sensitivities)
     # display_mat(reshape(auxillary.weights, s))
@@ -196,11 +201,15 @@ function viz_chain(chain::AMHChain)
     path = Matrix{Float64}(ex_path(chain))
     pth = draw_mat(path, true, colorant"black", colorant"green")
 
-    attm = softmax(auxillary.gr)
+    attm = softmax(auxillary.gr, 10.0)
     @show maximum(attm)
     lmul!(1.0 / maximum(attm), attm)
     att = draw_mat(attm, true, colorant"black", colorant"red")
     display(reduce(hcat, [geo, pth, att]))
+
+    loc = ex_loc_change(chain)
+    lmul!(1.0 / maximum(loc), loc)
+    display_mat(loc)
     # println("Predicted Image")
     # display_img(trace_st.img_mu)
     return nothing

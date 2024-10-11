@@ -81,6 +81,7 @@ function apply_changes(qt::QuadTree, changes::AbstractArray{Float64})
     @inbounds for i = 1:n
         x = lvs[i]
         c = changes[i]
+        # REVIEW: delta based on node size?
         w = c * (1.0 - x.mu) + (1.0 - c) * x.mu
         new_leaves[i] =
             QTAggNode(w, x.u, x.k, x.leaves, x.node, x.children)
@@ -108,10 +109,19 @@ function room_to_leaf(qt::QuadTree, ridx::Int64, c::Int64)
     traverse_qt(qt, point)
 end
 
+function create_obs(p::QuadTreeModel, first::GridRoom, second::GridRoom)
+    _img1 = render(p.renderer, first)
+    img1 = @pycall _img1.to_numpy()::PyObject
+    _img2 = render(p.renderer, second)
+    img2 = @pycall _img2.to_numpy()::PyObject
+    constraints = Gen.choicemap()
+    constraints[:img_a] = img1
+    constraints[:img_b] = img2
+    constraints
+end
+
 function create_obs(p::QuadTreeModel, r::GridRoom)
     _img = render(p.renderer, r)
-    # need to reshape ti.field (m x n) -> array (m x n x 3)
-    # for Gen.logpdf(observe_pixels)
     img = @pycall _img.to_numpy()::PyObject
     constraints = Gen.choicemap()
     constraints[:pixels] = img

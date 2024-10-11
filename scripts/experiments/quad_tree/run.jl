@@ -137,9 +137,7 @@ function main(c=ARGS)
     results = DataFrame(
         :door => Int64[],
         :step => Int64[],
-        :avg_loc => Tuple{Float64, Float64}[],
-        :max_loc => Tuple{Float64, Float64}[],
-        :kl_prop => Float64[]
+        :confidence => Float64[],
     )
 
     for door = doors
@@ -161,28 +159,24 @@ function main(c=ARGS)
 
         dargs = read_json(args["decision"])
 
-        q1 = query_from_params(room1, gm_params)
-        q2 = query_from_params(room2, gm_params)
+        q = query_from_params(room1, room2, gm_params)
 
 
-        model_params = first(q1.args)
+        model_params = first(q.args)
         img = GranularScenes.render(model_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
                                      var = 0.25)
         ddp_cm = generate_cm_from_ddp(ddp_params, img, model_params, 3, 3)
 
 
-        proc_1_kwargs = read_json(args["proc"])
-        proc_2_kwargs = deepcopy(proc_1_kwargs)
+        proc_kwargs = read_json(args["proc"])
 
         # HACK: Instead, rework `AdaptiveMH` or right-hand of query
-        proc_1_kwargs[:ddp]  = (_...) -> deepcopy(ddp_cm)
-        proc_2_kwargs[:ddp]  = (_...) -> deepcopy(ddp_cm)
+        proc_kwargs[:ddp]  = (_...) -> deepcopy(ddp_cm)
 
         protocol = attention == :ac ?
             AdaptiveComputation() : UniformProtocol()
-        proc_1_kwargs[:protocol] =
-            proc_2_kwargs[:protocol] = protocol
+        proc_kwargs[:protocol] = protocol
 
 
         if granularity == :fixed
@@ -201,8 +195,7 @@ function main(c=ARGS)
         #     proc_2_kwargs[:ddp_args] = (gm_params,
         #                                    0.0175)
         end
-        proc_1 = AdaptiveMH(; proc_1_kwargs...)
-        proc_2 = AdaptiveMH(; proc_2_kwargs...)
+        proc = AdaptiveMH(; proc_kwargs...)
 
         try
             isdir("/spaths/experiments/$(dataset)_$(model)") ||
@@ -213,51 +206,47 @@ function main(c=ARGS)
         end
 
         # how many chains to run
-        for c = 1:args["chain"]
+        for chain_idx = 1:args["chain"]
             # Random.seed!(c)
-            c1_out = joinpath(out_path, "c1_$(c).jld2")
-            c2_out = joinpath(out_path, "c2_$(c).jld2")
-            outs = [c1_out, c2_out]
+            # c1_out = joinpath(out_path, "c1_$(c).jld2")
+            # c2_out = joinpath(out_path, "c2_$(c).jld2")
+            # outs = [c1_out, c2_out]
             complete = false
-            if any(isfile, outs)
-                println("Record(s) found for chain: $(c)")
-                if args["restart"]
-                    println("restarting")
-                    foreach(o -> isfile(o) && rm(o), outs)
-                else
-                    complete = all(isfile, outs)
-                end
-            end
+            # if any(isfile, outs)
+            #     println("Record(s) found for chain: $(c)")
+            #     if args["restart"]
+            #         println("restarting")
+            #         foreach(o -> isfile(o) && rm(o), outs)
+            #     else
+            #         complete = all(isfile, outs)
+            #     end
+            # end
             if !complete
-                println("Starting chain $c")
+                println("Starting chain $(chain_idx)")
                 chain_steps = dargs[:epoch_steps] * dargs[:epochs]
-                log1 = MemLogger(dargs[:margin_size])
-                log2 = MemLogger(dargs[:margin_size])
-                c1 = Gen_Compose.initialize_chain(proc_1, q1, chain_steps)
-                c2 = Gen_Compose.initialize_chain(proc_2, q2, chain_steps)
-                e = 1; max_kl = 0.0; klm = zeros(16, 16);
-                while e < dargs[:epochs] && max_kl < dargs[:kl_threshold]
-                    (klm, max_kl, cidx, eloc) =
-                        search_step!(c1, c2, log1, log2,
+                log = MemLogger(dargs[:margin_size])
+                c = Gen_Compose.initialize_chain(proc, q, chain_steps)
+                e = 1; conf = 0.0;
+                while e < dargs[:epochs] # && max_kl < dargs[:kl_threshold]
+                    conf =
+                        search_step!(c, log,
                                      dargs[:epoch_steps],
                                      dargs[:search_weight])
-                    push!(results, (door, e * dargs[:epoch_steps],
-                                    Tuple(eloc), Tuple(cidx),
-                                    loc_error(blocked_idx, cidx, 1.0)))
+                    push!(results, (door, e * dargs[:epoch_steps], conf))
+
                     e += 1
                 end
-                GranularScenes.viz_chain(log1)
-                GranularScenes.viz_chain(log2)
-                GranularScenes.display_mat(klm)
+                GranularScenes.viz_chain(log)
+                # GranularScenes.display_mat(klm)
             end
-            println("Chain $(c) complete")
+            println("Chain $(chain_idx) complete")
         end
     end
     filter!(:step => >(20), results) # remove burnin
     left_df, right_df = groupby(results, :door)
-    plt = lineplot(left_df.step, left_df.kl_prop; name = "Left door",
-                   ylim = (0, 5))
-    lineplot!(plt, right_df.step, right_df.kl_prop; name = "Right door")
+    plt = lineplot(left_df.step, left_df.confidence; name = "Left door",
+                   ylim = (0, 1))
+    lineplot!(plt, right_df.step, right_df.confidence; name = "Right door")
     display(plt)
     display(last(left_df, 3))
     display(last(right_df, 3))

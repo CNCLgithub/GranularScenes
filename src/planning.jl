@@ -23,6 +23,18 @@ function search_step!(c1::AMHChain, c2::AMHChain,
     return result
 end
 
+
+function search_step!(c::AMHChain,
+                      l::ChainLogger,
+                      steps::Int = 50,
+                      search_weight::Float64 = 1.0)
+    train!(c, l, steps)
+    (er, dpi_kl) = test(c)
+    update_deltapi!(c, dpi_kl, search_weight)
+    viz_chain(c)
+    return er
+end
+
 function expected_loc(kl::Matrix)
     loc_x = 0.0
     loc_y = 0.0
@@ -44,7 +56,17 @@ function train!(c::AMHChain, log::ChainLogger,
         Gen_Compose.report_step!(log, c)
         Gen_Compose.increment!(c)
     end
-    marginal = marginalize(buffer(log), :obstacles)
+    # marginal = marginalize(buffer(log), :obstacles)
+    return nothing
+end
+
+function test(c::AMHChain)
+    (qt, loc_ws) = get_retval(c.state)
+    ws = softmax(loc_ws)
+    clamp!(ws, 0.01, 0.99)
+    grads = map(x -> 1.0 / (1E-4 + abs(log(-x + 1) - log(x))), ws)
+    mx = argmax(loc_ws)
+    (ws[mx], grads)
 end
 
 function test(m1::Matrix, m2::Matrix)
@@ -77,17 +99,25 @@ end
 
 kl_wgrad(p::Real, q::Real) = withgradient(kl, p, q)
 
-function update_deltapi!(c::AMHChain, dpi_kl::Matrix, weight::Float64 = 1.0)
+function update_deltapi!(c::AMHChain, dpi_kl::Vector{Float64},
+                         weight::Float64 = 1.0)
     aux = auxillary(c)
     state = estimate(c)
+    qt = first(get_retval(state))
+    ml = max_leaves(qt)
     lw = log(weight)
-    @assert size(dpi_kl) == size(aux.gr)
-    @inbounds for li = LinearIndices(dpi_kl)
-        # @show aux.gr[li]
-        # @show log(dpi_kl[li])
-        aux.gr[li] =
-            logsumexp(aux.gr[li], log(dpi_kl[li]) + lw)
-        # println("new aux.gr[li] $(aux.gr[li])")
+    n = length(dpi_kl)
+    lvs = leaves(qt)
+    @assert length(lvs) === n "search gradients missmatch qt leaves"
+    # @show dpi_kl
+    for i = 1:n
+        nde = node(lvs[i])
+        tidx = tree_idx(nde)
+        sidx = node_to_idx(nde, ml)
+        for mi = sidx
+            aux.gr[mi] =
+                logsumexp(aux.gr[mi], log(dpi_kl[i]) + lw)
+        end
     end
     update_queue!(aux.queue, aux.gr, state)
     return nothing

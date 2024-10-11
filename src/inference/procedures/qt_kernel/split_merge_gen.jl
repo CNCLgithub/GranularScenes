@@ -99,7 +99,7 @@ is_involution!(qt_involution)
 
 
 @gen function qt_branch_proposal(t::Gen.Trace, i::Int64)
-    qt::QuadTree = get_retval(t)
+    qt::QuadTree = first(get_retval(t))
     st::QTAggNode = traverse_qt(qt, i)
     # `st` could be parent if t' is a result of merge
     # since the original `i` would have been merged with its

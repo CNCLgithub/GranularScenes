@@ -6,7 +6,7 @@ Given a trace, returns the objective over paths
 """
 function quad_tree_path(tr::Gen.Trace)
     params = first(get_args(tr))
-    qt = get_retval(tr)
+    qt = first(get_retval(tr))
     a = first(params.entrance)
     b = first(params.exit)
     w = params.obs_cost

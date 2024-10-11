@@ -4,7 +4,8 @@ export qt_model
 # Generative Model
 #################################################################################
 @gen static function uniform_change_prior(x::QTAggNode)
-    b ~ uniform(0.0, 1.0)
+    # b ~ uniform(0.0, 1.0)
+    b ~ beta(1.0, 1.5)
     return b
 end
 
@@ -28,9 +29,3 @@ end
     result::Tuple{QuadTree, Array{Float64}} = (qt, loc_prior)
     return result
 end
-
-# shortest path given qt uncertainty
-# qtpath::QTPath = qt_a_star(qt, params.obs_cost, params.entrance, params.exit)
-#
-# Model state
-# result::QuadTreeState = QuadTreeState(qt, mu, var, qtpath)
