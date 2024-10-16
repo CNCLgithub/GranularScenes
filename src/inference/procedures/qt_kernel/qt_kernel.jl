@@ -18,6 +18,7 @@ function apply_random_walk(trace::Gen.Trace, proposal, proposal_args)
         model_args, argdiffs, fwd_choices)
     proposal_args_backward = (new_trace, proposal_args...,)
     (bwd_weight, _) = Gen.assess(proposal, proposal_args_backward, discard)
+    # @show (weight, fwd_weight, bwd_weight)
     alpha = weight - fwd_weight + bwd_weight
     (new_trace, weight)
 end

@@ -5,7 +5,7 @@ import Base.isapprox
 include("split_merge_gen.jl")
 
 function can_split(trace::Gen.Trace, node)
-    qt = get_retval(trace)
+    qt = first(get_retval(trace))
     agg_node = traverse_qt(qt, node)
     prod_node = agg_node.node
     w = weight(agg_node) # NOTE: -Inf in prop if w = 0
@@ -78,7 +78,7 @@ function split_merge_move(trace::Gen.Trace,
 end
 
 function balanced_split_merge(t::Gen.Trace, tidx::Int64)::Bool
-    qt = get_retval(t)
+    qt = first(get_retval(t))
     st = traverse_qt(qt, tidx)
     # it's possible to not reach the node
     # in that case, not balanced?

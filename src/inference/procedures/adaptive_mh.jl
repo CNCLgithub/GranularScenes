@@ -90,8 +90,8 @@ function kernel_move!(chain::AMHChain)
     t = state
 
     # select node to rejuv
-    node = select_node(protocol, aux)
     rw_block_init!(aux, protocol, t)
+    node = select_node(protocol, aux)
 
     # RW moves - first stage
     for j = 1:rw_budget
@@ -131,7 +131,6 @@ function kernel_move!(chain::AMHChain)
             break
         end
     end
-
     # if can_split(t, node)
     #     moves = balanced_split_merge(t, node) ?
     #         [split_move, merge_move] : [split_move]
@@ -177,13 +176,12 @@ function viz_chain(log::ChainLogger)
     pth = draw_mat(marginalize(bfr, :path),
                    true, colorant"black", colorant"green")
     attm = marginalize(bfr, :attention)
-    attm = softmax(attm, 10.)
+    attm = softmax(attm, 1.0)
     lmul!(1.0 / maximum(attm), attm)
     att = draw_mat(attm,
                    true, colorant"black", colorant"red")
     display(reduce(hcat, [geo, pth, att]))
     loc = marginalize(bfr, :change)
-    lmul!(1.0 / maximum(loc), loc)
     display_mat(loc)
     return nothing
 end
@@ -201,17 +199,15 @@ function viz_chain(chain::AMHChain)
     path = Matrix{Float64}(ex_path(chain))
     pth = draw_mat(path, true, colorant"black", colorant"green")
 
-    attm = softmax(auxillary.gr, 10.0)
+    attm  = ex_attention(chain)
+    attm = softmax(attm, auxillary.temp)
     @show maximum(attm)
     lmul!(1.0 / maximum(attm), attm)
     att = draw_mat(attm, true, colorant"black", colorant"red")
     display(reduce(hcat, [geo, pth, att]))
 
     loc = ex_loc_change(chain)
-    lmul!(1.0 / maximum(loc), loc)
     display_mat(loc)
-    # println("Predicted Image")
-    # display_img(trace_st.img_mu)
     return nothing
 end
 

@@ -92,6 +92,9 @@ function generate_cm_from_ddp(ddp_params::DataDrivenState,
             nodes += 1
         end
     end
+    # for i = 1:nodes
+    #     cm[:loc_prior => i => :b] = 0.0
+    # end
     println("DDP yielded $nodes qt leaves")
     return cm
 end

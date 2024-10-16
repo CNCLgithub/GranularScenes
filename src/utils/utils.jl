@@ -137,13 +137,13 @@ function marginalize(bfr, key::Symbol)
     lmul!(1.0 / n, marginal)
 end
 
-function softmax(x::Array{Float64}, t::Float64 = 1.0)
+function softmax(x::Array{<:Real}, t::Real = 1.0)
     out = similar(x)
     softmax!(out, x, t)
     return out
 end
 
-function softmax!(out::Array{Float64}, x::Array{Float64}, t::Float64 = 1.0)
+function softmax!(out::Array{<:Real}, x::Array{<:Real}, t::Real = 1.0)
     nx = length(x)
     maxx = maximum(x)
     sxs = 0.0

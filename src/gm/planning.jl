@@ -187,8 +187,8 @@ end
 
 function traversal_cost(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
     d = dist(node(dst), node(src))
-    c = obs_cost * (weight(dst) + weight(src))
-    d * c
+    c = obs_cost * (weight(dst) * length(dst) + weight(src) * length(src))
+    d + c
 end
 
 function tcost_wgrad(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)

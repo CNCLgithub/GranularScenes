@@ -11,6 +11,8 @@ using UnicodePlots
 using GranularScenes
 using StaticArrays: SVector
 
+import GranularScenes as GS
+
 function parse_commandline(c)
     s = ArgParseSettings()
 
@@ -101,6 +103,19 @@ function block_tile(r::GridRoom, tidx::Int)
     (GridRoom(r, d), cidx)
 end
 
+function loc_error(gt::CartesianIndex{2}, qt::QuadTree, ws::Array{Float64})
+    ml = GS.max_leaves(qt)
+    li = LinearIndices((ml, ml))[gt]
+    idx = GS.idx_to_node_space(li, ml)
+    n = GS.node(GS.traverse_qt(qt, idx))
+    weight_at_gt = ws[qt.mapping[GS.tree_idx(n)]]
+    max_weight = maximum(ws)
+    le = max_weight - weight_at_gt
+    return le
+    # @show le
+    # @show GS.area(n)
+    # le * GS.area(n)
+end
 function loc_error(a::CartesianIndex{2}, b::SVector{2, Float64}, max_kl::Float64)
     dx = a.I[1] - b[1]
     dy = a.I[2] - b[2]
@@ -132,12 +147,12 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
-    doors = [1, 2]
+    doors = [1,2]
 
     results = DataFrame(
         :door => Int64[],
         :step => Int64[],
-        :confidence => Float64[],
+        :loc_error => Float64[],
     )
 
     for door = doors
@@ -165,8 +180,8 @@ function main(c=ARGS)
         model_params = first(q.args)
         img = GranularScenes.render(model_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                     var = 0.25)
-        ddp_cm = generate_cm_from_ddp(ddp_params, img, model_params, 3, 3)
+                                     var = 0.225)
+        ddp_cm = generate_cm_from_ddp(ddp_params, img, model_params, 3, 4)
 
 
         proc_kwargs = read_json(args["proc"])
@@ -226,13 +241,15 @@ function main(c=ARGS)
                 chain_steps = dargs[:epoch_steps] * dargs[:epochs]
                 log = MemLogger(dargs[:margin_size])
                 c = Gen_Compose.initialize_chain(proc, q, chain_steps)
-                e = 1; conf = 0.0;
+                e = 1; le = 1.0;
                 while e < dargs[:epochs] # && max_kl < dargs[:kl_threshold]
-                    conf =
+                    (qt, ws, _) =
                         search_step!(c, log,
                                      dargs[:epoch_steps],
                                      dargs[:search_weight])
-                    push!(results, (door, e * dargs[:epoch_steps], conf))
+                    le = loc_error(blocked_idx, qt, ws)
+                    # println("Step $(e), LE: $(le)")
+                    push!(results, (door, e * dargs[:epoch_steps], le))
 
                     e += 1
                 end
@@ -242,11 +259,13 @@ function main(c=ARGS)
             println("Chain $(chain_idx) complete")
         end
     end
-    filter!(:step => >(20), results) # remove burnin
+    # filter!(:step => >(20), results) # remove burnin
+    @show extrema(results.loc_error)
     left_df, right_df = groupby(results, :door)
-    plt = lineplot(left_df.step, left_df.confidence; name = "Left door",
-                   ylim = (0, 1))
-    lineplot!(plt, right_df.step, right_df.confidence; name = "Right door")
+    plt = lineplot(left_df.step, left_df.loc_error; name = "Left door",
+                   ylim = extrema(results.loc_error),
+                   )
+    lineplot!(plt, right_df.step, right_df.loc_error; name = "Right door")
     display(plt)
     display(last(left_df, 3))
     display(last(right_df, 3))

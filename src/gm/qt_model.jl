@@ -72,20 +72,35 @@ function _max_depth(r::GridRoom)
     convert(Int64, minimum(log2.(steps)) + 1)
 end
 
+# function apply_changes(qt::QuadTree, changes::AbstractArray{Float64})
+#     # HACK: does not update parent statistics
+#     lvs = leaves(qt)
+#     n = length(lvs)
+#     @assert length(changes) === n "changes missmatch with qt leaves"
+#     new_leaves = Vector{QTAggNode}(undef, n)
+#     @inbounds for i = 1:n
+#         x = lvs[i]
+#         c = changes[i]
+#         # REVIEW: delta based on node size?
+#         # w = c * (1.0 - x.mu) + (1.0 - c) * x.mu
+#         w = c * 1.0  + (1.0 - c) * x.mu
+#         new_leaves[i] =
+#             QTAggNode(w, x.u, x.k, x.leaves, x.node, x.children)
+#     end
+#     QuadTree(qt.root, new_leaves, qt.mapping)
+# end
+
 function apply_changes(qt::QuadTree, changes::AbstractArray{Float64})
     # HACK: does not update parent statistics
     lvs = leaves(qt)
     n = length(lvs)
     @assert length(changes) === n "changes missmatch with qt leaves"
-    new_leaves = Vector{QTAggNode}(undef, n)
-    @inbounds for i = 1:n
-        x = lvs[i]
-        c = changes[i]
-        # REVIEW: delta based on node size?
-        w = c * (1.0 - x.mu) + (1.0 - c) * x.mu
-        new_leaves[i] =
-            QTAggNode(w, x.u, x.k, x.leaves, x.node, x.children)
-    end
+    i = argmax(changes)
+    x = lvs[i]
+    w = 1.0 # - x.mu
+    new_leaves = deepcopy(lvs)
+    new_leaves[i] =
+        QTAggNode(w, x.u, x.k, x.leaves, x.node, x.children)
     QuadTree(qt.root, new_leaves, qt.mapping)
 end
 

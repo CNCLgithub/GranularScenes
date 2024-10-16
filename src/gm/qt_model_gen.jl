@@ -4,8 +4,8 @@ export qt_model
 # Generative Model
 #################################################################################
 @gen static function uniform_change_prior(x::QTAggNode)
-    # b ~ uniform(0.0, 1.0)
-    b ~ beta(1.0, 1.5)
+    b ~ uniform(0.0, 1.0)
+    # b ~ beta(0.5, 5.5)
     return b
 end
 

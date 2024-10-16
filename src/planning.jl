@@ -29,10 +29,10 @@ function search_step!(c::AMHChain,
                       steps::Int = 50,
                       search_weight::Float64 = 1.0)
     train!(c, l, steps)
-    (er, dpi_kl) = test(c)
+    result = (qt, lw, dpi_kl) = test(c)
     update_deltapi!(c, dpi_kl, search_weight)
-    viz_chain(c)
-    return er
+    # viz_chain(c)
+    return result
 end
 
 function expected_loc(kl::Matrix)
@@ -64,9 +64,10 @@ function test(c::AMHChain)
     (qt, loc_ws) = get_retval(c.state)
     ws = softmax(loc_ws)
     clamp!(ws, 0.01, 0.99)
-    grads = map(x -> 1.0 / (1E-4 + abs(log(-x + 1) - log(x))), ws)
-    mx = argmax(loc_ws)
-    (ws[mx], grads)
+    grads = map(x -> (1E-4 + abs(log(-x + 1) - log(x))), ws)
+    # grads = map(x -> 1.0 / (1E-4 + abs(log(-x + 1) - log(x))), ws)
+    # mx = argmax(loc_ws)
+    (qt, ws, grads)
 end
 
 function test(m1::Matrix, m2::Matrix)
@@ -113,12 +114,14 @@ function update_deltapi!(c::AMHChain, dpi_kl::Vector{Float64},
     for i = 1:n
         nde = node(lvs[i])
         tidx = tree_idx(nde)
-        sidx = node_to_idx(nde, ml)
-        for mi = sidx
-            aux.gr[mi] =
-                logsumexp(aux.gr[mi], log(dpi_kl[i]) + lw)
-        end
+        delta = log(dpi_kl[i]) + lw
+        aux.queue[tidx] = logsumexp(aux.queue[tidx], delta)
+        # sidx = node_to_idx(nde, ml)
+        # for mi = sidx
+        #     aux.gr[mi] =
+        #         logsumexp(aux.gr[mi], log(dpi_kl[i]) + lw)
+        # end
     end
-    update_queue!(aux.queue, aux.gr, state)
+    # update_queue!(aux.queue, aux.gr, state)
     return nothing
 end
