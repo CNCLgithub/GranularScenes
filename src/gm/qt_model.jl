@@ -69,7 +69,7 @@ function _max_depth(r::GridRoom)
     @unpack bounds, steps = r
     # FIXME: allow for arbitrary room steps
     @assert all(ispow2.(steps)) "Room not a power of 2"
-    convert(Int64, minimum(log2.(steps)) + 1)
+    convert(Int64, log2(minimum(steps)) + 1)
 end
 
 # function apply_changes(qt::QuadTree, changes::AbstractArray{Float64})
@@ -97,7 +97,10 @@ function apply_changes(qt::QuadTree, changes::AbstractArray{Float64})
     @assert length(changes) === n "changes missmatch with qt leaves"
     i = argmax(changes)
     x = lvs[i]
-    w = 1.0 # - x.mu
+    max_depth = node(x).max_level
+    depth = node(x).level
+    delta_mass = exp2(-2 * (max_depth - depth))
+    w = min(1.0, x.mu + delta_mass)
     new_leaves = deepcopy(lvs)
     new_leaves[i] =
         QTAggNode(w, x.u, x.k, x.leaves, x.node, x.children)

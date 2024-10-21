@@ -3,5 +3,5 @@
     "epochs": 60,
     "margin_size": 20,
     "kl_threshold": 100.0,
-    "search_weight": 0.00001
+    "search_weight": 0.00005
 }
