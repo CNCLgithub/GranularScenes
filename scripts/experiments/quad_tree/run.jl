@@ -111,6 +111,8 @@ function loc_error(gt::CartesianIndex{2}, qt::QuadTree, ws::Array{Float64})
     weight_at_gt = ws[qt.mapping[GS.tree_idx(n)]]
     max_weight = maximum(ws)
     le = max_weight - weight_at_gt
+    penalty =  GS.area(n)  / ml # penalize coarseness
+    le *= penalty
     return le
     # @show le
     # @show GS.area(n)
