@@ -104,20 +104,30 @@ function block_tile(r::GridRoom, tidx::Int)
 end
 
 function loc_error(gt::CartesianIndex{2}, qt::QuadTree, ws::Array{Float64})
+    ws = ws ./ maximum(ws)
     ml = GS.max_leaves(qt)
     li = LinearIndices((ml, ml))[gt]
     idx = GS.idx_to_node_space(li, ml)
-    n = GS.node(GS.traverse_qt(qt, idx))
-    weight_at_gt = ws[qt.mapping[GS.tree_idx(n)]]
-    max_weight = maximum(ws)
-    le = max_weight - weight_at_gt
-    penalty = exp2(2 * (n.max_level - n.level)) # penalize coarseness
+    node_at_gt = GS.node(GS.traverse_qt(qt, idx))
+    weight_at_gt = ws[qt.mapping[GS.tree_idx(node_at_gt)]]
+    le = 0.0
+    for current = GS.leaves(qt)
+        le += pair_error(qt, weight_at_gt, node_at_gt, ws,
+                         GS.node(current))
+    end
+    # penalize coarseness
+    penalty = exp2(2 * (node_at_gt.max_level - node_at_gt.level))
     le *= penalty
     return le
-    # @show le
-    # @show GS.area(n)
-    # le * GS.area(n)
 end
+
+function pair_error(qt, weight_at_gt, node_at_gt, ws, current)
+    d = GS.dist(node_at_gt, current)
+    w = max(0.0, (ws[qt.mapping[GS.tree_idx(current)]] - weight_at_gt))
+    # penalty = exp2(2 * (current.max_level - current.level)) # penalize coarseness
+    iszero(d) ? 0.0 : w  / d
+end
+
 function loc_error(a::CartesianIndex{2}, b::SVector{2, Float64}, max_kl::Float64)
     dx = a.I[1] - b[1]
     dy = a.I[2] - b[2]
@@ -261,7 +271,7 @@ function main(c=ARGS)
             println("Chain $(chain_idx) complete")
         end
     end
-    # filter!(:step => >(20), results) # remove burnin
+    filter!(:step => >(50), results) # remove burnin
     @show extrema(results.loc_error)
     left_df, right_df = groupby(results, :door)
     plt = lineplot(left_df.step, left_df.loc_error; name = "Left door",

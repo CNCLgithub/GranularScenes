@@ -10,7 +10,7 @@ using FunctionalCollections: PersistentVector
 IMG_RES = (128, 128)
 
 function occupancy_position(r::GridRoom)::Matrix{Float64}
-    grid = zeros(steps(r))
+    grid = zeros(Rooms.steps(r))
     grid[data(r) .== obstacle_tile] .= 1.0
     grid
 end
@@ -25,11 +25,11 @@ end
 function build(r::GridRoom;
                max_f::Int64 = 11,
                max_size::Int64 = 5,
-               pct_open::Float64 = 0.3,
+               pct_open::Float64 = 0.4,
                side_buffer::Int64 = 0,
                factor = 2)
 
-    dims = steps(r)
+    dims = Rooms.steps(r)
     # prevent furniture generated in either:
     # -1 out of sight
     # -2 blocking entrance exit
@@ -73,10 +73,10 @@ end
 
 function main()
     # Parameters
-    name = "ddp_train_11f_32x32"
-    n = 10000
-    # name = "ddp_test_11f_32x32"
-    # n = 16
+    # name = "ddp_train_11f_32x32"
+    # n = 1000
+    name = "ddp_test_11f_32x32"
+    n = 16
 
     hn = Int(n // 2)
     room_dims = (16., 16.)

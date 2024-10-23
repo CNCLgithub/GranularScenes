@@ -65,8 +65,8 @@ function generate_cm_from_ddp(ddp_params::DataDrivenState,
     img = process_ddp_input(timg, device)
     x = @pycall nn.forward(img)::PyObject
     state = @pycall x.detach().squeeze(0).cpu().numpy()::Matrix{Float64}
-    # println("Data-driven state")
-    # display_mat(state)
+    println("Data-driven state")
+    display_mat(state)
     head = model_params.start_node
     d = model_params.dims[2]
     # Iterate through QT

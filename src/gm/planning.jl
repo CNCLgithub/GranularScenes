@@ -100,6 +100,7 @@ function qt_a_star(qt::QuadTree, dw::Float64, ent::Int64, ext::Int64)
     g_score[ent_idx] = 0
 
 
+    visits = Dict{Int64, Int64}()
     gradients = Dict{Int64, Float64}()
     gradients[ent_idx] = 0 # REVIEW: value?
 
@@ -116,6 +117,7 @@ function qt_a_star(qt::QuadTree, dw::Float64, ent::Int64, ext::Int64)
         g_score,
         came_from,
         gradients,
+        visits,
         heuristic,
         qt,
         dw
@@ -130,7 +132,8 @@ function qt_astar_impl!(
     closed_set, # an (initialized) color-map to indicate status of vertices
     g_score, # a vector holding g scores for each node
     came_from, # a vector holding the parent of each node in the A* exploration
-    gradients,
+    gradients::Dict{Int64, Float64},
+    visits::Dict{Int64, Int64},
     heuristic,
     qt::QuadTree, dw::Float64)
 
@@ -158,6 +161,8 @@ function qt_astar_impl!(
             (tc, grad) = tcost_wgrad(cur_state, n_state, dw)
             gradients[current] = get(gradients, current, 0.0) + grad
             gradients[neighbor] = get(gradients, neighbor, 0.0) + grad
+            visits[current] = get(visits, current, 0) + 1
+            visits[neighbor] = get(visits, neighbor, 0) + 1
             tentative_g_score = g_score[current] + tc
 
             if tentative_g_score < get(g_score, neighbor, Inf)
@@ -167,6 +172,9 @@ function qt_astar_impl!(
                 came_from[neighbor] = current
             end
         end
+    end
+    for (k, v) = gradients
+        gradients[k] = v / visits[k]
     end
     return score, total_path, gradients
 end

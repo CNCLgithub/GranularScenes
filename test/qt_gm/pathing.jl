@@ -33,7 +33,7 @@ function load_base_scene(path::String)
     base = from_json(GridRoom, base_s)
 end
 function draw_gradients(tr::Gen.Trace, grads::Dict{Int64, Float64})
-    qt = get_retval(tr)
+    qt = first(get_retval(tr))
     n = max_leaves(qt)
     leaves = qt.leaves
     m = zeros((n, n))
@@ -43,6 +43,7 @@ function draw_gradients(tr::Gen.Trace, grads::Dict{Int64, Float64})
             m[idx] = v
         end
     end
+    m .*= 1.0 / maximum(m)
     display(draw_mat(m, true, colorant"black", colorant"red"))
 end
 function mytest()
@@ -55,19 +56,21 @@ function mytest()
     display(room)
     model_params = QuadTreeModel(room)
 
-    tr, ls = generate(qt_model, (model_params,))
+    cm = choicemap()
+    cm[:trackers => (1, Val(:production)) => :produce] = true
+    tr, ls = generate(qt_model, (model_params,), cm)
 
     @time plan = cost, path, grads = quad_tree_path(tr)
     @show path
     draw_gradients(tr, grads)
 
-    # qt = get_retval(tr)
-    # println("\n\nInferred state + Path + Attention")
-    # geo = draw_mat(project_qt(qt), true, colorant"black", colorant"blue")
-    # # println("Estimated path")
-    # path = Matrix{Float64}(ex_path(tr))
-    # pth = draw_mat(path, true, colorant"black", colorant"green")
-    # display(reduce(hcat, [geo, pth]))
+    qt = first(get_retval(tr))
+    println("\n\nInferred state + Path + Attention")
+    geo = draw_mat(project_qt(qt), true, colorant"black", colorant"blue")
+    # println("Estimated path")
+    path = Matrix{Float64}(ex_path(tr))
+    pth = draw_mat(path, true, colorant"black", colorant"green")
+    display(reduce(hcat, [geo, pth]))
 
     # tprime, _ = rw_move(tr, 13)
     # plan = cost, path, grads = quad_tree_path(tprime)
