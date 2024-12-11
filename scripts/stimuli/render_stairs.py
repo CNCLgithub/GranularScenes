@@ -110,7 +110,7 @@ class Scene:
                                             enter_editmode=False,)
             ob = bpy.context.object
             dims = object_d['dims']
-            dims[2] *= 1.5
+            dims[2] *= 2.5
             self.scale_obj(ob, object_d['dims'])
             self.rotate_obj(ob, object_d['orientation'])
         elif object_d['shape'] == 'Puck':

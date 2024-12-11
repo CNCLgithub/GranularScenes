@@ -7,7 +7,7 @@ using DataFrames
 using GranularScenes: add, display_mat
 
 blender_args = Dict(
-    :template => "$(@__DIR__)/stair_template.blend",
+    :template => "$(@__DIR__)/window_template.blend",
     :script => "$(@__DIR__)/render_stairs.py",
     :blender => "/spaths/bin/blender-4.2.0-linux-x64/blender"
 )
@@ -21,7 +21,7 @@ function load_scene(path::String)
 end
 
 function render_stims(df::DataFrame, name::String)
-    out = "/spaths/datasets/$(name)/render_stairs"
+    out = "/spaths/datasets/$(name)/render_window"
     isdir(out) || mkdir(out)
     for r in eachrow(df), door = 1:2
         base = load_scene("/spaths/datasets/$(name)/scenes/$(r.scene)_$(door).json")
@@ -38,7 +38,7 @@ function render_stims(df::DataFrame, name::String)
 end
 
 function main()
-    cmd = ["path_block_maze/2024-09-04_frrRvZ", "0"]
+    cmd = ["path_block_2024-03-14", "1"]
     args = parse_commandline(;x=cmd)
 
     name = args["dataset"]

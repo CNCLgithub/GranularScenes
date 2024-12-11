@@ -7,15 +7,18 @@ using DataFrames
 using GranularScenes: add
 
 blender_args = Dict(
-    :template => "$(@__DIR__)/vss_template.blend",
-    :script => "$(@__DIR__)/render_classic.py",
+    # :template => "$(@__DIR__)/vss_template.blend",
+    :template => "$(@__DIR__)/window_template.blend",
+    :script => "$(@__DIR__)/render_stairs.py",
+    # :script => "$(@__DIR__)/render_classic.py",
     :blender => "/spaths/bin/blender-4.2.0-linux-x64/blender",
-    :mode => "full",
+    # :mode => "full",
+    :mode => "noflip",
     :resolution => (720, 480),
 )
 
 function render_stims(df::DataFrame, name::String)
-    out = "/spaths/datasets/$(name)/render_classic"
+    out = "/spaths/datasets/$(name)/render_window"
     isdir(out) || mkdir(out)
     for r in eachrow(df), door = 1:2
         base_p = "/spaths/datasets/$(name)/scenes/$(r.scene)_$(door).json"
