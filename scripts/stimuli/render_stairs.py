@@ -11,6 +11,7 @@ except:
 import json
 import time
 import argparse
+import numpy as np
 
 # Flush stdout in case blender is complaining
 sys.stdout.flush()
@@ -30,8 +31,14 @@ class Scene:
         :type theta: bool
         """
         if flip:
-            for obj in bpy.data.objects:
-                if obj.name != 'Camera':
+            collection = bpy.data.collections["backwall"]
+            for obj in collection.all_objects:
+                if "wall" in obj.name:
+                    self.rotate_obj(obj, [0., 0., np.pi])
+                elif obj.name == "door":
+                    obj.rotation_euler[2] += 0.555 * np.pi
+                    obj.location[0] *= -1
+                else:
                     obj.location[0] *= -1
 
         bpy.context.view_layer.update()
@@ -55,7 +62,7 @@ class Scene:
 
         :param rot: Either an euler angle (xyz) or quaternion (wxyz)
         """
-        self.select_obj(obj)
+        # self.select_obj(obj)
         if len(rot) == 3:
             obj.rotation_mode = 'XYZ'
             obj.rotation_euler = rot

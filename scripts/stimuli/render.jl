@@ -20,34 +20,40 @@ blender_args = Dict(
 function render_stims(df::DataFrame, name::String)
     out = "/spaths/datasets/$(name)/render_window"
     isdir(out) || mkdir(out)
-    for r in eachrow(df), door = 1:2
-        base_p = "/spaths/datasets/$(name)/scenes/$(r.scene)_$(door).json"
+    for r in eachrow(df)
+        base_p = "/spaths/datasets/$(name)/scenes/$(r.scene).json"
         local base_s
         open(base_p, "r") do f
             base_s = JSON.parse(f)
         end
         base = from_json(GridRoom, base_s)
-        p = "$(out)/$(r.scene)_$(door)"
-        renderer = Blender(;blender_args...)
+        blocked = add(base, Set{Int64}(r.blocked))
+
+        p = "$(out)/$(r.scene)_1"
+        renderer =  Blender(;blender_args...)
         Rooms.render(renderer, base, p)
-        blocked = add(base, Set{Int64}(r.tidx))
-        p = "$(out)/$(r.scene)_$(door)_blocked"
+
+        p = "$(out)/$(r.scene)_1_blocked"
+        Rooms.render(renderer, blocked, p)
+
+        p = "$(out)/$(r.scene)_2"
+        renderer =  Blender(;blender_args..., mode = "flip")
+        Rooms.render(renderer, base, p)
+
+        p = "$(out)/$(r.scene)_2_blocked"
         Rooms.render(renderer, blocked, p)
     end
+    return nothing
 end
 
 function main()
-    cmd = ["path_block_2024-03-14", "1"]
+    cmd = ["window-0.1/2025-01-21_oC1nUN", "0"]
     args = parse_commandline(;x=cmd)
 
     name = args["dataset"]
     src = "/spaths/datasets/$(name)"
     df = DataFrame(CSV.File("$(src)/scenes.csv"))
-    seeds = unique(df.scene)
-    if args["scene"] == 0
-        seeds = unique(df.scene)
-    else
-        seeds = [args["scene"]]
+    if args["scene"] != 0
         df = df[df.scene .== args["scene"], :]
     end
 
