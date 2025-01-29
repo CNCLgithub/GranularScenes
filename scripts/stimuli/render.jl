@@ -6,20 +6,22 @@ using ArgParse
 using DataFrames
 using GranularScenes: add
 
-blender_args = Dict(
-    # :template => "$(@__DIR__)/vss_template.blend",
-    :template => "$(@__DIR__)/window_template.blend",
-    :script => "$(@__DIR__)/render_stairs.py",
-    # :script => "$(@__DIR__)/render_classic.py",
-    :blender => "/spaths/bin/blender-4.2.0-linux-x64/blender",
-    # :mode => "full",
-    :mode => "noflip",
-    :resolution => (720, 480),
-)
+function blender_modes(mode::String)
+    in(mode, ["door", "bookshelf"])
+end
 
-function render_stims(df::DataFrame, name::String)
-    out = "/spaths/datasets/$(name)/render_window"
+function gen_blender_args(mode::String)
+    Dict(
+        :template => "$(@__DIR__)/$(mode)_template.blend",
+        :script => "$(@__DIR__)/render_$(mode).py",
+        :blender => "/spaths/bin/blender-4.2.0-linux-x64/blender",
+    )
+end
+
+function render_stims(df::DataFrame, name::String, mode::String)
+    out = "/spaths/datasets/$(name)/render_$(mode)"
     isdir(out) || mkdir(out)
+    blender_args = gen_blender_args(mode)
     for r in eachrow(df)
         base_p = "/spaths/datasets/$(name)/scenes/$(r.scene).json"
         local base_s
@@ -30,7 +32,7 @@ function render_stims(df::DataFrame, name::String)
         blocked = add(base, Set{Int64}(r.blocked))
 
         p = "$(out)/$(r.scene)_1"
-        renderer =  Blender(;blender_args...)
+        renderer =  Blender(;blender_args..., mode = "noflip")
         Rooms.render(renderer, base, p)
 
         p = "$(out)/$(r.scene)_1_blocked"
@@ -47,21 +49,17 @@ function render_stims(df::DataFrame, name::String)
 end
 
 function main()
-    cmd = ["window-0.1/2025-01-21_oC1nUN", "0"]
+    cmd = ["window-0.1/2025-01-22_BJFn5j", "bookshelf", "0"]
     args = parse_commandline(;x=cmd)
-
     name = args["dataset"]
     src = "/spaths/datasets/$(name)"
     df = DataFrame(CSV.File("$(src)/scenes.csv"))
     if args["scene"] != 0
         df = df[df.scene .== args["scene"], :]
     end
-
-    render_stims(df, name)
+    render_stims(df, name, args["mode"])
     return nothing
 end
-
-
 
 function parse_commandline(;x=ARGS)
     s = ArgParseSettings()
@@ -71,6 +69,12 @@ function parse_commandline(;x=ARGS)
         help = "Which scene to run"
         arg_type = String
         required = true
+
+        "mode"
+        help = "Which render variant"
+        arg_type = String
+        required = true
+        range_tester = blender_modes
 
         "scene"
         help = "Which scene to run"

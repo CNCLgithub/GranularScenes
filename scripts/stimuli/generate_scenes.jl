@@ -377,7 +377,9 @@ function evaluate_sample!(temp::RoomProcess, x::RoomProcess)
     sigcount = 0 # times blocking changes path
     largest  = 0 # largest path block
     toblock  = 0
-    @inbounds for i = (np-4):-1:5
+    # path too short to modify
+    np < 15 && return (0, Int[], 0)
+    @inbounds for i = 1:(np - 7)
         path_idx = path[i]
         path_row = (path_idx - 1) % rowsize + 1
         path_col = div(path_idx - 1, rowsize) + 1

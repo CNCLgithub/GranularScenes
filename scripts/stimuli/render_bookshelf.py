@@ -11,6 +11,7 @@ except:
 import json
 import time
 import argparse
+import numpy as np
 
 # Flush stdout in case blender is complaining
 sys.stdout.flush()
@@ -30,8 +31,8 @@ class Scene:
         :type theta: bool
         """
         if flip:
-            for obj in bpy.data.objects:
-                obj.location[0] *= -1
+            obj = bpy.context.scene.objects.get('bookshelf')
+            obj.location[0] *= -1
 
         bpy.context.view_layer.update()
 
@@ -54,7 +55,7 @@ class Scene:
 
         :param rot: Either an euler angle (xyz) or quaternion (wxyz)
         """
-        self.select_obj(obj)
+        # self.select_obj(obj)
         if len(rot) == 3:
             obj.rotation_mode = 'XYZ'
             obj.rotation_euler = rot
@@ -105,14 +106,12 @@ class Scene:
             ob = bpy.context.object
             self.scale_obj(ob, object_d['dims'])
         elif object_d['shape'] == 'Block':
-            pos = object_d['position']
-            pos[2] = -5.0
-            bpy.ops.mesh.primitive_cube_add(location=pos,
+            bpy.ops.mesh.primitive_cube_add(location=object_d['position'],
                                             enter_editmode=False,)
             ob = bpy.context.object
-            d = object_d['dims']
-            d[2] = 10.0
-            self.scale_obj(ob, d)
+            dims = object_d['dims']
+            dims[2] *= 2.5
+            self.scale_obj(ob, object_d['dims'])
             self.rotate_obj(ob, object_d['orientation'])
         elif object_d['shape'] == 'Puck':
             bpy.ops.mesh.primitive_cylinder_add(
@@ -155,7 +154,7 @@ class Scene:
         obj_names = list(map(str, range(len(obj_data))))
         self.obj_names = obj_names
         for i in range(len(obj_data)):
-            name = obj_names[i]
+            name = f'block_{obj_names[i]}'
             data = obj_data[i]
             mat = data['appearance']
             # only create obstacles

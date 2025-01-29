@@ -11,6 +11,7 @@ except:
 import json
 import time
 import argparse
+import numpy as np
 
 # Flush stdout in case blender is complaining
 sys.stdout.flush()
@@ -26,50 +27,27 @@ class Scene:
 
         :param scene: Describes the ramp, table, and balls.
         :type scene_d: dict
-        :param trace: the physical state of the objects
-        :type trace: dict or None
-        :param theta: Angle around the world to point the camera
-        :type theta: float or None
+        :param flip: Whether to flip the template along the y-axis
+        :type theta: bool
         """
         if flip:
-            bpy.data.objects["painting"].select_set(True)
-            # to select the object in the 3D viewport,
-            current_state = bpy.data.objects["painting"]
-            current_state.location[0] *= -1
-            # for obj in bpy.data.objects:
-            #     if obj.name != 'Camera':
-            #         obj.location[0] *= -1
+            collection = bpy.data.collections["backwall"]
+            for obj in collection.all_objects:
+                if "wall" in obj.name:
+                    self.rotate_obj(obj, [0., 0., np.pi])
+                elif obj.name == "door":
+                    obj.rotation_euler[2] += 0.555 * np.pi
+                    obj.location[0] *= -1
+                else:
+                    obj.location[0] *= -1
 
         bpy.context.view_layer.update()
 
-        # Parse scene structure
-        self.load_scene(scene)
+        # Load obstacles
+        self.load_obstacles(scene)
         print('Loaded scene')
         sys.stdout.flush()
 
-    @property
-    def trace(self):
-        return self._trace
-
-    @trace.setter
-    def trace(self, t):
-        """
-        A dictionary containing to keys: `('pos', 'rot')` where each
-        holds a 3-dimensional array of `TxNxK`,
-        where `T` is the number of key frames,
-        `N` is the number of objects,
-        and `K` is either `xyz` or `wxyz`.
-
-        :param t: The physics state to apply as keyframes
-        :type t: dict or None
-        """
-        if not t is None:
-            frames = len(t['pos'])
-        else:
-            frames = 1
-        bpy.context.scene.frame_set(1)
-        bpy.context.scene.frame_end = frames + 1
-        self._trace = t
 
     def select_obj(self, obj):
         """ Sets the given object into active context.
@@ -84,7 +62,7 @@ class Scene:
 
         :param rot: Either an euler angle (xyz) or quaternion (wxyz)
         """
-        self.select_obj(obj)
+        # self.select_obj(obj)
         if len(rot) == 3:
             obj.rotation_mode = 'XYZ'
             obj.rotation_euler = rot
@@ -138,6 +116,8 @@ class Scene:
             bpy.ops.mesh.primitive_cube_add(location=object_d['position'],
                                             enter_editmode=False,)
             ob = bpy.context.object
+            dims = object_d['dims']
+            dims[2] *= 2.5
             self.scale_obj(ob, object_d['dims'])
             self.rotate_obj(ob, object_d['orientation'])
         elif object_d['shape'] == 'Puck':
@@ -175,68 +155,18 @@ class Scene:
             mat = 'U'
             self.set_appearance(ob, mat)
 
-    def load_scene(self, scene_dict):
-        """ Configures the ramp, table, and balls
-        """
+    def load_obstacles(self, scene_dict):
         # Load Objects / Tiles
         obj_data = scene_dict['objects']
         obj_names = list(map(str, range(len(obj_data))))
         self.obj_names = obj_names
         for i in range(len(obj_data)):
-            name = obj_names[i]
+            name = f'block_{obj_names[i]}'
             data = obj_data[i]
             mat = data['appearance']
             # only create obstacles
             if mat == "blue":
                 self.create_obj(name, data)
-
-    def set_rendering_params(self, resolution):
-        """ Configures various settings for rendering such as resolution.
-        """
-        bpy.context.scene.render.resolution_x = resolution[0]
-        bpy.context.scene.render.resolution_y = resolution[1]
-        bpy.context.scene.render.resolution_percentage = 100
-        bpy.context.scene.render.engine = 'CYCLES'
-        # bpy.context.scene.render.engine = 'BLENDER_EEVEE'
-        # bpy.context.scene.cycles.samples = 128
-        # bpy.context.scene.render.tile_x = 16
-        # bpy.context.scene.render.tile_y = 16
-
-    def set_camera(self, params):
-        """ Moves the camera along a circular path.
-
-        :param rot: Angle in radians along path.
-        :type rot: float
-        """
-        camera = bpy.data.objects['Camera']
-        camera.location = params['position']
-        self.rotate_obj(camera, params['orientation'])
-        bpy.context.view_layer.update()
-        camera.keyframe_insert(data_path='location', index = -1)
-        camera.keyframe_insert(data_path='rotation_quaternion', index = -1)
-
-    def set_lights(self, lights):
-        for (i, l) in enumerate(lights):
-
-            # cribbed from https://stackoverflow.com/a/57310198
-            name = 'light_{0:d}'.format(i)
-            # create light datablock, set attributes
-            light_data = bpy.data.lights.new(name=name, type='AREA')
-            light_data.energy = l['intensity']
-
-            # create new object with our light datablock
-            light_object = bpy.data.objects.new(name=name, object_data=light_data)
-
-            # link light object
-            bpy.context.collection.objects.link(light_object)
-
-            # make it active
-            bpy.context.view_layer.objects.active = light_object
-
-            #change location
-            light_object.location = l['position']
-            self.rotate_obj(light_object, l['orientation'])
-            bpy.context.view_layer.update()
 
 
     def render(self, output_name, resolution , camera_rot = None):
@@ -254,8 +184,6 @@ class Scene:
         :type camera_rot: float
 
         """
-        if not (resolution is None):
-            self.set_rendering_params(resolution)
 
         if os.path.isfile(output_name):
             print('File {0!s} exists'.format(output_name))
