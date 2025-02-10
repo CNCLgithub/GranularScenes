@@ -49,7 +49,7 @@ function render_stims(df::DataFrame, name::String, mode::String)
 end
 
 function main()
-    cmd = ["window-0.1/2025-01-22_BJFn5j", "bookshelf", "0"]
+    cmd = ["window-0.1/2025-02-05_vifdDO", "door", "0"]
     args = parse_commandline(;x=cmd)
     name = args["dataset"]
     src = "/spaths/datasets/$(name)"

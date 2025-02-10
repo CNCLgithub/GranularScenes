@@ -193,7 +193,7 @@ function clear_region!(x::RoomProcess, i::Int, radius::Int = 1)
     rcount = rstop - rstart
 
     for cidx = cstart:cstop
-        fcount = count(==(f), x.m[rstart:rstop])
+        fcount = count(==(f), x.m[rstart:rstop, cidx])
         x.m[rstart:rstop, cidx] .= o
         x.c[cidx] -= fcount
     end
@@ -210,7 +210,6 @@ function clear_row!(x::RoomProcess, r::Int)
 end
 
 function sample_room!(x::RoomProcess)
-    reset_chasis!(x)
     n = 10
     for _ = 1:n
         countfree(x) > 0 || break # no more space
@@ -308,11 +307,6 @@ end
 function reset_chasis!(x::RoomProcess)
     fill!(x.m, f)
     fill!(x.c, size(x.m, 1))
-    foreach(c -> clear_col!(x, c), 1:4)
-
-    # clear_col!(x, 1)
-    # clear_row!(x, 1)
-    # clear_row!(x, size(x.m, 1))
     return nothing
 end
 

@@ -26,7 +26,7 @@ function analyze!(x::RoomProcess)
 end
 
 function main()
-    dset = "window-0.1/2025-01-22_BJFn5j"
+    dset = "window-0.1/2025-01-31_w634oF"
     df = DataFrame(
         :scene => Int64[],
         :door => Int64[],
@@ -37,7 +37,7 @@ function main()
     onpath = 252
     offpath = 244
 
-    for scene = 1:10
+    for scene = 1:16
         room = load_scene(dset, scene)
         for door_idx = 1:2
             door = door_idx === 1 ? offpath : onpath
