@@ -90,19 +90,22 @@ end
 #     QuadTree(qt.root, new_leaves, qt.mapping)
 # end
 
-function apply_changes(qt::QuadTree, changes::AbstractArray{Float64})
+function apply_changes(qt::QuadTree, idx::Int)
+    idx == 0 && return qt
     # HACK: does not update parent statistics
     lvs = leaves(qt)
     n = length(lvs)
-    @assert length(changes) === n "changes missmatch with qt leaves"
-    i = argmax(changes)
-    x = lvs[i]
+    @assert idx <= n && idx > 0 "changes missmatch with qt leaves"
+    @inbounds x = lvs[idx]
+    # Assume the change adds an obstacle.
+    # Get the amount adding a new obstacle changes the overall
+    # density of the node
     max_depth = node(x).max_level
     depth = node(x).level
     delta_mass = exp2(-2 * (max_depth - depth))
     w = min(1.0, x.mu + delta_mass)
     new_leaves = deepcopy(lvs)
-    new_leaves[i] =
+    new_leaves[idx] =
         QTAggNode(w, x.u, x.k, x.leaves, x.node, x.children)
     QuadTree(qt.root, new_leaves, qt.mapping)
 end
