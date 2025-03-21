@@ -1,18 +1,18 @@
-export run_inference, resume_inference, query_from_params, proc_from_params
+export run_inference, resume_inference, query_from_params, proc_from_params, extend_query
 
 function ex_obstacles(c::AMHChain)
-    qt = first(get_retval(c.state))
+    qt = get_retval(c.state)
     project_qt(qt)
 end
 
 function ex_img(c::AMHChain)
-    p = first(get_args(c.state))
-    qt = first(get_retval(c.state))
+    _, p = get_args(c.state)
+    qt = get_retval(c.state)
     img = @pycall render(p.renderer, qt).to_numpy()::Array{Float32,3}
 end
 
 function ex_granularity(c::AMHChain)
-    qt = first(get_retval(c.state))
+    qt = get_retval(c.state)
     n = max_leaves(qt)
     m = Matrix{UInt8}(undef, n, n)
     for x in qt.leaves
@@ -24,7 +24,7 @@ function ex_granularity(c::AMHChain)
 end
 
 function ex_path(tr::Gen.Trace)
-    qt = first(get_retval(tr))
+    qt = get_retval(tr)
     n = max_leaves(qt)
     cost, path = quad_tree_path(tr)
     leaves = qt.leaves
@@ -46,21 +46,48 @@ function ex_attention(c::AMHChain)
     attention_map(c.auxillary, c.state)
 end
 
-function ex_loc_change(tr::Gen.Trace)
-    qt, loc_ws = get_retval(tr)
-    n = max_leaves(qt)
-    leaves = qt.leaves
-    m = Matrix{Float32}(undef, n, n)
-    for (vi, x) in enumerate(qt.leaves)
-        lw = loc_ws[vi]
-        for idx = node_to_idx(node(x), n)
-            m[idx] = lw
-        end
+function task_error(c::AMHChain, gt::Int)
+    error = 0.0
+    if gt == 0
+        # no change; get coinflip should be false
+        error = 1.0 - Int(getindex(c.state, :changes => 1 => :change))
+    else
+        # change; earth movers distance
+        error = loc_error(c, gt)
     end
-    m
+    return error
 end
-function ex_loc_change(c::AMHChain)
-    ex_loc_change(c.state)
+
+function loc_error(c::AMHChain, gt::Int)
+    qt = get_retval(c.state)
+    ws = change_weights(qt)
+    ml = max_leaves(qt)
+    # How likely was the change at the GT?
+    idx = idx_to_node_space(gt, ml)
+    node_at_gt = node(traverse_qt(qt, idx))
+    weight_at_gt = ws[qt.mapping[tree_idx(node_at_gt)]]
+    # How likely was the change near the GT?
+    le = 0.0
+    for current = leaves(qt)
+        le += nearby_error(qt, weight_at_gt, node_at_gt, ws,
+                           node(current))
+    end
+    # Penalize for coarse granulatiy at the GT change
+    # e.g., if the node is 4x4, then there is 1/4 chance of
+    # localizing correctly
+    penalty = exp2(2 * (node_at_gt.max_level - node_at_gt.level))
+    le *= penalty
+    return le
+end
+
+"""
+Surrogate earth mover's distance between a given node
+and the location of the GT change.
+"""
+function nearby_error(qt, weight_at_gt, node_at_gt, ws, current)
+    d = dist(node_at_gt, current)
+    w = max(0.0, (ws[qt.mapping[tree_idx(current)]] - weight_at_gt))
+    iszero(d) ? 0.0 : w  / d
 end
 
 """
@@ -86,12 +113,36 @@ function query_from_params(room::GridRoom, gm_params::QuadTreeModel)
         :path => ex_path,
         :img => ex_img,
         :score => c -> Gen.get_score(c.state),
-        :likelihood => c -> Gen.project(c.state, select(:pixels)),
+        :likelihood => c -> Gen.project(c.state, select(:img_a)),
     ))
     # define the posterior over qt geometries
     query = Gen_Compose.StaticQuery(lm,
                                     qt_model,
-                                    (gm_params,),
+                                    (0, gm_params),
+                                    obs)
+end
+
+function extend_query(query::StaticQuery, room::GridRoom,
+                      gt_change::Int)
+    (_, gm_params) = query.args
+    key = :changes => 1 => :img_b
+    change_key = :changes => 1 => :change
+    loc_key = :changes => 1 => :location
+    obs = create_obs(gm_params, room, key)
+    lm = LatentMap(Dict{Symbol, Any}(
+        :attention => ex_attention,
+        :obstacles => ex_obstacles,
+        :granularity => ex_granularity,
+        :path => ex_path,
+        :img => ex_img,
+        :score => c -> Gen.get_score(c.state),
+        :likelihood => c -> Gen.project(c.state, select(:img_a, key)),
+        :task_error => c -> task_error(c, gt_change),
+    ))
+    # define the posterior over qt geometries
+    query = Gen_Compose.StaticQuery(lm,
+                                    qt_model,
+                                    (1, gm_params),
                                     obs)
 end
 

@@ -4,14 +4,13 @@ export quad_tree_path,
 """
 Given a trace, returns the objective over paths
 """
-function quad_tree_path(tr::Gen.Trace)
-    params = first(get_args(tr))
-    qt = first(get_retval(tr))
+function quad_tree_path(tr::QTTrace)
+    _, params = get_args(tr)
+    qt = get_retval(tr)
     a = first(params.entrance)
     b = first(params.exit)
     w = params.obs_cost
     qt_a_star(qt, w, a, b)
-    # plan(qt, w, a, b)
 end
 
 function qt_path_cost(tr::Gen.Trace)::Float64
@@ -26,7 +25,7 @@ function qt_path_cost(tr::Gen.Trace)::Float64
 end
 
 function quad_tree_cross_cost(t_prime::Gen.Trace, path::Vector{Int64})
-    params = first(get_args(t_prime))
+    _, params = get_args(t_prime)
     qt = get_retval(t_prime)
     src = leaf_from_idx(qt, path[1])
     if length(path) == 1

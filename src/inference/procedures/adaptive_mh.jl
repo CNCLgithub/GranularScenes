@@ -1,5 +1,6 @@
 export AdaptiveMH,
-    AMHChain
+    AMHChain,
+    extend_chain!
 
 #################################################################################
 # Attention MCMC
@@ -12,6 +13,7 @@ export AdaptiveMH,
     #############################################################################
 
     # chain length
+    # TODO: remove, not used
     samples::Int64 = 10
 
 
@@ -44,12 +46,6 @@ function Gen_Compose.initialize_chain(proc::AdaptiveMH,
     # Intialize using DDP
     constraints = proc.ddp(proc.ddp_args...)
     constraints[:img_a] = query.observations[:img_a]
-    constraints[:img_b] = query.observations[:img_b]
-    # if has_submap(query.observations, :pixels)
-    #     set_submap!(constraints, :pixels,
-    #                 get_submap(query.observations, :pixels))
-    # end
-    # display(constraints)
     trace,_ = Gen.generate(query.forward_function,
                            query.args,
                            constraints)
@@ -73,6 +69,20 @@ function Gen_Compose.step!(chain::AMHChain)
 
     # viz_chain(chain)
     # println("current score $(get_score(chain.state))")
+    return nothing
+end
+
+function extend_chain!(chain::AMHChain, query::StaticQuery)
+    trace = estimate(chain)
+    old_query = estimand(chain)
+    old_args = old_query.args
+    new_args = query.args
+    @assert length(old_args) == length(new_args) "New query must match args"
+    argdiffs = Tuple((x == y ? NoChange() : UnknownChange()
+                      for (x,y) = zip(old_args, new_args)))
+    new_trace, _ = update(trace, new_args, argdiffs, query.observations)
+    chain.state = new_trace
+    chain.query = query
     return nothing
 end
 
@@ -152,20 +162,19 @@ function kernel_move!(chain::AMHChain)
     return nothing
 end
 
-function inner_rw_moves!(aux, p, t, w, m, i, steps = 3)
-    for _ = 1:steps
-        _t, _w = rw_move(m, t, i)
-        __w = w + _w
-        println("$(m) + RW weight: $(_w)")
-        if log(rand()) < __w
-            sm_block_accept!(aux, _t, i, m)
-            sm_block_complete!(aux, p, _t, i, m)
-            return _t
+# TODO: cleanup
+function change_step!(chain::AMHChain)
+    trace = estimate(chain)
+    proc = estimator(chain)
+    for j = 1:proc.rw_budget
+        _t, alpha = regenerate(trace, select(:changes => 1 => :change,
+                                             :changes => 1 => :location))
+        if log(rand()) < alpha # accept?
+            trace = _t
         end
     end
-    return t
+    chain.state = trace
 end
-
 
 function viz_chain(log::ChainLogger)
     bfr = buffer(log)
@@ -181,15 +190,15 @@ function viz_chain(log::ChainLogger)
     att = draw_mat(attm,
                    true, colorant"black", colorant"red")
     display(reduce(hcat, [geo, pth, att]))
-    loc = marginalize(bfr, :change)
-    display_mat(loc)
+    # loc = marginalize(bfr, :change)
+    # display_mat(loc)
     return nothing
 end
 function viz_chain(chain::AMHChain)
     # chain.step % 10 == 0 || return nothing
     @unpack auxillary, state = chain
-    params = first(get_args(state))
-    qt = first(get_retval(state))
+    _, params = get_args(state)
+    qt = get_retval(state)
     # println("Attention")
     # s = size(auxillary.sensitivities)
     # display_mat(reshape(auxillary.weights, s))

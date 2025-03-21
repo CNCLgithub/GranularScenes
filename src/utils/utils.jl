@@ -121,13 +121,61 @@ end
 #     isnan(sxs) || iszero(sxs) ? fill(1.0/n, n) : exs ./ sxs
 # end
 
+abstract type MarginalType end
 
-function marginalize(bfr, key::Symbol)
+"""Discrete values of n categories of type T"""
+struct DiscreteMarginal{T} <: MarginalType
+end
+
+function check_format(m::DiscreteMarginal{T}, bfr, key) where {T}
+    @assert length(bfr) > 0 "Cannot marginalize over no samples"
+    sample = bfr[1][key]
+    st = typeof(sample)
+    @assert st <: T "Marginal type missmatch: $(st) ≠ $(T)"
+    return nothing
+end
+
+"""Continuous values of n dimensions of type T"""
+struct ContinuousMarginal{T} <: MarginalType
+end
+
+function check_format(m::ContinuousMarginal{T}, bfr, key) where {T}
     n = length(bfr)
-    # @show n
-    @assert n > 0
+    @assert n > 0 "Cannot marginalize over no samples"
+    sample = bfr[1][key]
+    @assert typeof(sample) <: T "Marginal type missmatch"
+    return nothing
+end
+
+function marginalize(m::DiscreteMarginal{T}, bfr, key::Symbol) where {T<:Bool}
+    check_format(m, bfr, key)
+    n = length(bfr)
+    acc = 0.0
+    for sample in bfr
+        if sample[key]
+            acc += 1
+        end
+    end
+    acc / n
+end
+
+function marginalize(m::DiscreteMarginal{T}, bfr, key::Symbol) where {T}
+    check_format(m, bfr, key)
+    n = length(bfr)
+    acc = Dict{T, Int}()
+    for sample in bfr
+        v = sample[key]
+        acc[v] = get(acc, v, 0) + 1
+    end
+    map!(x -> x / n, values(acc))
+    return acc
+end
+
+function marginalize(m::ContinuousMarginal{T}, bfr, key::Symbol) where {T}
+    check_format(m, bfr, key)
+    n = length(bfr)
     marginal = similar(bfr[1][key], Float64)
-    fill!(marginal, 0.0)
+    fill!(marginal, 0)
     for i = 1:n
         datum = bfr[i][key]
         for j = eachindex(marginal)
@@ -135,6 +183,25 @@ function marginalize(bfr, key::Symbol)
         end
     end
     lmul!(1.0 / n, marginal)
+end
+
+
+function marginalize(m::ContinuousMarginal{T}, bfr, key::Symbol) where {T<:Real}
+    check_format(m, bfr, key)
+    n = length(bfr)
+    marginal = zero(T)
+    for i = 1:n
+        marginal += bfr[i][key]
+    end
+    marginal *= 1.0 / n
+    return marginal
+end
+
+function marginalize(bfr, key::Symbol)
+    n = length(bfr)
+    @assert n > 0
+    T = typeof(bfr[1][key])
+    marginalize(ContinuousMarginal{T}(), bfr, key)
 end
 
 function softmax(x::Array{<:Real}, t::Real = 1.0)

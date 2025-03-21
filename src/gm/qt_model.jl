@@ -1,4 +1,4 @@
-export QuadTreeModel
+export QuadTreeModel, QTTrace
 
 
 include("graphics.jl")
@@ -72,23 +72,20 @@ function _max_depth(r::GridRoom)
     convert(Int64, log2(minimum(steps)) + 1)
 end
 
-# function apply_changes(qt::QuadTree, changes::AbstractArray{Float64})
-#     # HACK: does not update parent statistics
-#     lvs = leaves(qt)
-#     n = length(lvs)
-#     @assert length(changes) === n "changes missmatch with qt leaves"
-#     new_leaves = Vector{QTAggNode}(undef, n)
-#     @inbounds for i = 1:n
-#         x = lvs[i]
-#         c = changes[i]
-#         # REVIEW: delta based on node size?
-#         # w = c * (1.0 - x.mu) + (1.0 - c) * x.mu
-#         w = c * 1.0  + (1.0 - c) * x.mu
-#         new_leaves[i] =
-#             QTAggNode(w, x.u, x.k, x.leaves, x.node, x.children)
-#     end
-#     QuadTree(qt.root, new_leaves, qt.mapping)
-# end
+function change_weights(qt::QuadTree)
+    lvs = leaves(qt)
+    n = length(lvs)
+    ws = Vector{Float64}(undef, n)
+    @inbounds for i = 1:n
+        x = lvs[i]
+        w = weight(x)
+        log_prop_tiles = 2 * (1 - level(node(x)))
+        # uncertainty: 2 * abs(w - 0.5) [0, 1]
+        # size: ntiles / total tiles [0, 1]
+        ws[i] = exp(2 + log(abs(0.5 - w)) + log_prop_tiles)
+    end
+    ws = softmax(ws)
+end
 
 function apply_changes(qt::QuadTree, idx::Int)
     idx == 0 && return qt
@@ -141,13 +138,20 @@ function create_obs(p::QuadTreeModel, first::GridRoom, second::GridRoom)
     constraints
 end
 
-function create_obs(p::QuadTreeModel, r::GridRoom)
+function create_obs(p::QuadTreeModel, r::GridRoom,
+                    key = :img_a)
     _img = render(p.renderer, r)
     img = @pycall _img.to_numpy()::PyObject
     constraints = Gen.choicemap()
-    constraints[:pixels] = img
+    constraints[key] = img
     constraints
 end
 
 include("qt_model_gen.jl")
+
+
+gen_fn(::QuadTreeModel) = qt_model
+# const QTModelIR = Gen.get_ir(qt_model)
+const QTTrace = Gen.get_trace_type(qt_model)
+
 include("planning.jl")

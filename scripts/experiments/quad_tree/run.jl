@@ -21,7 +21,7 @@ function parse_commandline(c)
         "--dataset"
         help = "Trial dataset"
         arg_type = String
-        default = "path_block_2024-03-14"
+        default = "window-0.1/2025-02-05_vifdDO"
 
         "--gm"
         help = "Generative Model params"
@@ -66,7 +66,7 @@ function parse_commandline(c)
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 2
+        default = 1
 
         "chain"
         help = "The number of chains to run"
@@ -81,17 +81,18 @@ end
 function clear_wall(r::GridRoom)
     # remove wall near camera
     d = data(r)
-    d[:, 1:2] .= floor_tile
+    d[:, 1:1] .= floor_tile
     GridRoom(r, d)
 end
 
-function load_scene(path::String)
+function load_scene(path::String, door::Int)
     local base_s
     open(path, "r") do f
         base_s = JSON.parse(f)
     end
     # base = expand(from_json(GridRoom, base_s), 2)
     base = from_json(GridRoom, base_s)
+    base = setproperties(base; exits = [door])
     clear_wall(base)
 end
 
@@ -99,9 +100,10 @@ function block_tile(r::GridRoom, tidx::Int)
     d = deepcopy(data(r))
     d[tidx] = obstacle_tile
     cidx = CartesianIndices(Rooms.steps(r))[tidx]
-    println("Blocked tile at location $(cidx)")
+    println("Blocked tile $(tidx) at location $(cidx)")
     (GridRoom(r, d), cidx)
 end
+
 
 function loc_error(gt::CartesianIndex{2}, qt::QuadTree, ws::Array{Float64})
     ws = ws ./ maximum(ws)
@@ -151,7 +153,7 @@ function main(c=ARGS)
     args["restart"] = true
 
     manifest = CSV.File(base_path * ".csv")
-    tile = manifest[:tidx][scene]
+    tile = manifest[:blocked][scene]
 
 
     attention = args["attention"]
@@ -159,7 +161,8 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
-    doors = [1,2]
+    doors = [2,1]
+    door_tiles = [252, 244]
 
     results = DataFrame(
         :door => Int64[],
@@ -167,14 +170,14 @@ function main(c=ARGS)
         :loc_error => Float64[],
     )
 
-    for door = doors
+    for (door, door_tile) = zip(doors, door_tiles)
         out_path = "/spaths/experiments/flicker_$(dataset)_$(model)/$(scene)_$(door)"
         if args["reverse"]
             out_path *= "_reversed"
         end
 
-        base_p = joinpath(base_path, "$(scene)_$(door).json")
-        room1 = load_scene(base_p)
+        base_p = joinpath(base_path, "$(scene).json")
+        room1 = load_scene(base_p, door_tile)
         room2, blocked_idx = block_tile(room1, tile)
 
         gm_params = QuadTreeModel(room1;
@@ -186,14 +189,13 @@ function main(c=ARGS)
 
         dargs = read_json(args["decision"])
 
-        q = query_from_params(room1, room2, gm_params)
+        q1 = query_from_params(room1, gm_params)
+        q2 = extend_query(q1, room2, tile)
 
-
-        model_params = first(q.args)
-        img = GranularScenes.render(model_params.renderer, room1)
+        img = GranularScenes.render(gm_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
                                      var = 0.225)
-        ddp_cm = generate_cm_from_ddp(ddp_params, img, model_params, 3, 4)
+        ddp_cm = generate_cm_from_ddp(ddp_params, img, gm_params, 3, 4)
 
 
         proc_kwargs = read_json(args["proc"])
@@ -234,53 +236,30 @@ function main(c=ARGS)
 
         # how many chains to run
         for chain_idx = 1:args["chain"]
-            # Random.seed!(c)
-            # c1_out = joinpath(out_path, "c1_$(c).jld2")
-            # c2_out = joinpath(out_path, "c2_$(c).jld2")
-            # outs = [c1_out, c2_out]
-            complete = false
-            # if any(isfile, outs)
-            #     println("Record(s) found for chain: $(c)")
-            #     if args["restart"]
-            #         println("restarting")
-            #         foreach(o -> isfile(o) && rm(o), outs)
-            #     else
-            #         complete = all(isfile, outs)
-            #     end
-            # end
-            if !complete
-                println("Starting chain $(chain_idx)")
-                chain_steps = dargs[:epoch_steps] * dargs[:epochs]
-                log = MemLogger(dargs[:margin_size])
-                c = Gen_Compose.initialize_chain(proc, q, chain_steps)
-                e = 1; le = 1.0;
-                while e < dargs[:epochs] # && max_kl < dargs[:kl_threshold]
-                    (qt, ws, _) =
-                        search_step!(c, log,
-                                     dargs[:epoch_steps],
-                                     dargs[:search_weight])
-                    le = loc_error(blocked_idx, qt, ws)
-                    # println("Step $(e), LE: $(le)")
-                    push!(results, (door, e * dargs[:epoch_steps], le))
-
-                    e += 1
-                end
-                GranularScenes.viz_chain(log)
-                # GranularScenes.display_mat(klm)
-            end
+            println("Starting train chain $(chain_idx)")
+            log = MemLogger(dargs[:margin_size])
+            total_steps = dargs[:train_steps] + dargs[:test_steps]
+            c = Gen_Compose.initialize_chain(proc, q1, total_steps)
+            GS.train!(c, log, dargs[:train_steps])
+            # TODO: record something about training
+            # 
+            extend_chain!(c, q2)
+            te = test!(c, log, dargs[:test_steps])
+            GranularScenes.viz_chain(log)
             println("Chain $(chain_idx) complete")
+            println("Task error: $(te)")
         end
     end
-    filter!(:step => >(50), results) # remove burnin
-    @show extrema(results.loc_error)
-    left_df, right_df = groupby(results, :door)
-    plt = lineplot(left_df.step, left_df.loc_error; name = "Left door",
-                   ylim = extrema(results.loc_error),
-                   )
-    lineplot!(plt, right_df.step, right_df.loc_error; name = "Right door")
-    display(plt)
-    display(last(left_df, 3))
-    display(last(right_df, 3))
+    # filter!(:step => >(50), results) # remove burnin
+    # @show extrema(results.loc_error)
+    # left_df, right_df = groupby(results, :door)
+    # plt = lineplot(left_df.step, left_df.loc_error; name = "Left door",
+    #                ylim = extrema(results.loc_error),
+    #                )
+    # lineplot!(plt, right_df.step, right_df.loc_error; name = "Right door")
+    # display(plt)
+    # display(last(left_df, 3))
+    # display(last(right_df, 3))
     return nothing
 end
 

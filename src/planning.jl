@@ -1,4 +1,4 @@
-export search_step!
+export search_step!, train!, test!
 
 using LinearAlgebra: lmul!
 using Zygote: withgradient
@@ -25,6 +25,19 @@ function train!(c::AMHChain, log::ChainLogger,
     return nothing
 end
 
+function test!(c::AMHChain, log::ChainLogger,
+               steps::Int = 50)
+    for _ = 1:steps
+        Gen_Compose.is_finished(c) && break
+        change_step!(c)
+        Gen_Compose.report_step!(log, c)
+        Gen_Compose.increment!(c)
+    end
+    marginalize(ContinuousMarginal{Float64}(), buffer(log), :task_error)
+    # pchange = marginalize(DiscreteMarginal{Bool}(), buffer(log), :change)
+    # loc = marginalize(DiscreteMarginal{Int}(), buffer(log), :location)
+end
+
 function test(c::AMHChain)
     (qt, loc_ws) = get_retval(c.state)
     ws = loc_ws ./ maximum(loc_ws)
@@ -40,7 +53,7 @@ function update_deltapi!(c::AMHChain, dpi_kl::Vector{Float64},
                          weight::Float64 = 1.0)
     aux = auxillary(c)
     state = estimate(c)
-    qt = first(get_retval(state))
+    qt = get_retval(state)
     ml = max_leaves(qt)
     lw = log(weight)
     n = length(dpi_kl)

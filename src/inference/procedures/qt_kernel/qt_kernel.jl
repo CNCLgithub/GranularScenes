@@ -11,7 +11,7 @@ end
 
 function apply_random_walk(trace::Gen.Trace, proposal, proposal_args)
     model_args = get_args(trace)
-    argdiffs = map((_) -> NoChange(), model_args)
+    argdiffs = map((_) -> Gen.NoChange(), model_args)
     proposal_args_forward = (trace, proposal_args...,)
     (fwd_choices, fwd_weight, _) = propose(proposal, proposal_args_forward)
     (new_trace, weight, _, discard) = update(trace,
@@ -46,7 +46,7 @@ end
 
 
 function downstream_selection(t::Gen.Trace, node::Int64)
-    params = first(get_args(t))
+    _, params = get_args(t)
     head::QTAggNode = t[:trackers]
     st::QTAggNode = traverse_qt(head, node)
     # associated rooms samples
@@ -66,11 +66,6 @@ end
 function downstream_selection(::Merge, t::Gen.Trace, node::Int64)
     p = Gen.get_parent(node, 4)
     downstream_selection(t, p)
-end
-
-function all_downstream_selection(t::Gen.Trace)::Gen.Selection
-    p = first(get_args(t))
-    all_downstream_selection(p)
 end
 
 include("random_walk.jl")

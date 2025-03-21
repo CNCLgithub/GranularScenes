@@ -33,7 +33,7 @@ function load_base_scene(path::String)
     base = from_json(GridRoom, base_s)
 end
 function draw_gradients(tr::Gen.Trace, grads::Dict{Int64, Float64})
-    qt = first(get_retval(tr))
+    qt = get_retval(tr)
     n = max_leaves(qt)
     leaves = qt.leaves
     m = zeros((n, n))
@@ -64,7 +64,7 @@ function mytest()
     @show path
     draw_gradients(tr, grads)
 
-    qt = first(get_retval(tr))
+    qt = get_retval(tr)
     println("\n\nInferred state + Path + Attention")
     geo = draw_mat(project_qt(qt), true, colorant"black", colorant"blue")
     # println("Estimated path")

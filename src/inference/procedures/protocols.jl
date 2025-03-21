@@ -122,13 +122,13 @@ mutable struct AdaptiveAux <: AuxillaryState
     queue::PriorityQueue{Int64, Float64, ReverseOrdering}
 end
 
-function AuxState(p::AdaptiveComputation, trace)
+function AuxState(p::AdaptiveComputation, trace::QTTrace)
     (_, _, dpi) = p.objective(trace)
     # go through the current set of terminal nodes
     # and intialize priority
     ds = Dict{Int64, Float64}()
     q = PriorityQueue{Int64, Float64, ReverseOrdering}(Reverse)
-    qt = first(get_retval(trace))
+    qt = get_retval(trace)
     lvs = leaves(qt)
     n = length(lvs)
     for i = 1:n
@@ -250,7 +250,7 @@ function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
     (_, _, grads) = p.objective(tr)
     # go through the current set of terminal nodes
     # and intialize priority
-    qt = first(get_retval(tr))
+    qt = get_retval(tr)
     lvs = leaves(qt)
     n = length(lvs)
     current = collect(keys(qt.mapping))
@@ -275,7 +275,7 @@ end
 
 function attention_map(aux::AdaptiveAux, t::Gen.Trace)
     # amap = Matrix{Float32}(aux.gr)
-    qt = first(get_retval(t))
+    qt = get_retval(t)
     n = max_leaves(qt)
     amap = Matrix{Float32}(undef, n, n)
     for x in qt.leaves
@@ -296,7 +296,7 @@ function init_queue(tr::Gen.Trace, gr::Matrix, delta_pi)
     q = PriorityQueue{Int64, Float64, ReverseOrdering}(Reverse)
     # go through the current set of terminal nodes
     # and intialize priority
-    qt = first(get_retval(tr))
+    qt = get_retval(tr)
     lvs = leaves(qt)
     n = length(lvs)
     ml = max_leaves(qt)
@@ -340,7 +340,7 @@ end
 # REVIEW: not used?
 function update_queue!(queue, gr::Matrix{Float64},
                        tr::Gen.Trace)
-    qt = first(get_retval(tr))
+    qt = get_retval(tr)
     ml = max_leaves(qt)
     empty!(queue)
     for l = qt.leaves
