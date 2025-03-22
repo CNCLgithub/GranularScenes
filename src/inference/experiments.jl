@@ -50,10 +50,11 @@ function task_error(c::AMHChain, gt::Int)
     error = 0.0
     if gt == 0
         # no change; get coinflip should be false
-        error = 1.0 - Int(getindex(c.state, :changes => 1 => :change))
+        error += getindex(c.state, :changes => 1 => :change) ? 1.0 : 0.0
     else
         # change; earth movers distance
-        error = loc_error(c, gt)
+        # error += getindex(c.state, :changes => 1 => :change) ? 0.0 : 1.0
+        error += loc_error(c, gt)
     end
     return error
 end
@@ -137,6 +138,7 @@ function extend_query(query::StaticQuery, room::GridRoom,
         :img => ex_img,
         :score => c -> Gen.get_score(c.state),
         :likelihood => c -> Gen.project(c.state, select(:img_a, key)),
+        :change => c -> getindex(c.state, change_key),
         :task_error => c -> task_error(c, gt_change),
     ))
     # define the posterior over qt geometries

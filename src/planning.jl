@@ -21,6 +21,7 @@ function train!(c::AMHChain, log::ChainLogger,
         Gen_Compose.step!(c)
         Gen_Compose.report_step!(log, c)
         Gen_Compose.increment!(c)
+        # viz_chain(c)
     end
     return nothing
 end
@@ -33,9 +34,9 @@ function test!(c::AMHChain, log::ChainLogger,
         Gen_Compose.report_step!(log, c)
         Gen_Compose.increment!(c)
     end
-    marginalize(ContinuousMarginal{Float64}(), buffer(log), :task_error)
-    # pchange = marginalize(DiscreteMarginal{Bool}(), buffer(log), :change)
-    # loc = marginalize(DiscreteMarginal{Int}(), buffer(log), :location)
+    te = marginalize(ContinuousMarginal{Float64}(), buffer(log), :task_error)
+    pchange = marginalize(DiscreteMarginal{Bool}(), buffer(log), :change)
+    return (te, pchange)
 end
 
 function test(c::AMHChain)

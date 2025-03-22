@@ -40,8 +40,11 @@ function display_mat(m::Matrix;
     return nothing
 end
 
-function display_img(m::Array{Float64, 3})
-    img = colorview(RGB, permutedims(m, (3,1,2)))
+function display_img(m::Array{<:T, 3}) where {T<:Real}
+    if size(m, 1) > 3
+        m = permutedims(m, (3, 2, 1))
+    end
+    img = colorview(RGB, m)
     display(img)
     return nothing
 end
@@ -52,7 +55,7 @@ end
 #################################################################################
 
 function process_taichi_array(array::PyObject)
-    arr = @pycall array.to_numpy()::Array
+    arr = @pycall array.to_numpy()::Array{Float32, 3}
     reverse!(arr, dims = 1)
     reverse!(arr, dims = 2)
     return arr
@@ -62,10 +65,10 @@ function save_img_array(array::PyObject, path::String)
     save_img_array(process_taichi_array(array), path)
 end
 
-function save_img_array(array::Array, path::String)
-    _array = permutedims(array, (3,2,1))
-    clamp!(_array, 0., 1.0)
-    img = colorview(RGB, _array)
+function save_img_array(array::Array{T}, path::String) where {T}
+    x = permutedims(array, (3,2,1))
+    clamp!(x, zero(T), one(T))
+    img = colorview(RGB, x)
     save(path, img)
 end
 
@@ -238,6 +241,20 @@ function safe_uniform_weights(x)::Vector{Float64}
     n = length(x) + 1
     ws = fill(1.0 / n, n)
     return ws
+end
+
+function fast_sigmoid(x::Float64)
+    2 * x / (1.0 + abs(x))
+end
+
+const NEGLN2 = -log(2)
+
+"""
+Numerically accurate evaluation of log(1 - exp(x)) for x < 0.
+See [Maechler2012accurate] https://cran.r-project.org/web/packages/Rmpfr/vignettes/log1mexp-note.pdf
+"""
+function log1mexp(x::Float64)
+    x  > NEGLN2 ? log(-expm1(x)) : log1p(-exp(x))
 end
 
 #################################################################################

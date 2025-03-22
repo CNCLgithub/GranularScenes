@@ -19,7 +19,7 @@ loader_params:
 exp_params:
   lr: 1.0e-4
   weight_decay: 0.0
-  sched_gamma: 0.975
+  sched_gamma: 0.99
 
 manual_seed: 1265
 

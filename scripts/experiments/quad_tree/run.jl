@@ -66,7 +66,7 @@ function parse_commandline(c)
         "scene"
         help = "Which scene to run"
         arg_type = Int64
-        default = 1
+        default = 2
 
         "chain"
         help = "The number of chains to run"
@@ -78,11 +78,17 @@ function parse_commandline(c)
     return parse_args(c, s)
 end
 
-function clear_wall(r::GridRoom)
+function fix_room(r::GridRoom, door::Int)
+    template = GridRoom((16, 16), (16., 16.), [8], [door])
     # remove wall near camera
-    d = data(r)
-    d[:, 1:1] .= floor_tile
-    GridRoom(r, d)
+    d = data(template)
+    d[:, 1:2] .= floor_tile
+    for i = eachindex(data(r))
+        if data(r)[i] == obstacle_tile
+            d[i] = obstacle_tile
+        end
+    end
+    GridRoom(template, d)
 end
 
 function load_scene(path::String, door::Int)
@@ -90,18 +96,17 @@ function load_scene(path::String, door::Int)
     open(path, "r") do f
         base_s = JSON.parse(f)
     end
-    # base = expand(from_json(GridRoom, base_s), 2)
     base = from_json(GridRoom, base_s)
-    base = setproperties(base; exits = [door])
-    clear_wall(base)
+    fix_room(base, door)
 end
 
 function block_tile(r::GridRoom, tidx::Int)
+    tidx == 0 && return r
     d = deepcopy(data(r))
     d[tidx] = obstacle_tile
     cidx = CartesianIndices(Rooms.steps(r))[tidx]
     println("Blocked tile $(tidx) at location $(cidx)")
-    (GridRoom(r, d), cidx)
+    GridRoom(r, d)
 end
 
 
@@ -154,6 +159,7 @@ function main(c=ARGS)
 
     manifest = CSV.File(base_path * ".csv")
     tile = manifest[:blocked][scene]
+    # tile = 0
 
 
     attention = args["attention"]
@@ -161,6 +167,10 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
+    # doors = [2]
+    # door_tiles = [252]
+    # doors = [1]
+    # door_tiles = [244]
     doors = [2,1]
     door_tiles = [252, 244]
 
@@ -178,7 +188,7 @@ function main(c=ARGS)
 
         base_p = joinpath(base_path, "$(scene).json")
         room1 = load_scene(base_p, door_tile)
-        room2, blocked_idx = block_tile(room1, tile)
+        room2 = block_tile(room1, tile)
 
         gm_params = QuadTreeModel(room1;
                                   read_json(args["gm"])...,
@@ -194,7 +204,7 @@ function main(c=ARGS)
 
         img = GranularScenes.render(gm_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                     var = 0.225)
+                                     var = 0.325)
         ddp_cm = generate_cm_from_ddp(ddp_params, img, gm_params, 3, 4)
 
 
@@ -244,10 +254,10 @@ function main(c=ARGS)
             # TODO: record something about training
             # 
             extend_chain!(c, q2)
-            te = test!(c, log, dargs[:test_steps])
+            te, pc = test!(c, log, dargs[:test_steps])
             GranularScenes.viz_chain(log)
             println("Chain $(chain_idx) complete")
-            println("Task error: $(te)")
+            println("Pr(Change = True) = $(pc); Task error: $(te)")
         end
     end
     # filter!(:step => >(50), results) # remove burnin

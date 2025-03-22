@@ -146,15 +146,9 @@ accepts(aux::AdaptiveAux) = aux.accepts
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
     ks = collect(keys(aux.queue))
     raw = collect(values(aux.queue))
+    clamp!(raw, 0.01, Inf)
     ws = softmax(raw, aux.temp) # TODO: add as hyperparameter
     nidx = categorical(ws)
-    pselect = ws[nidx]
-    # adjust temp
-    if pselect < 0.01
-        aux.temp *= 0.1
-    elseif pselect > 0.75
-        aux.temp *= 10.0
-    end
     node = ks[nidx]
     # @printf("Selected node: %d; GR: %3g Pr: %3g\n",
     #         node,
@@ -168,22 +162,11 @@ function rw_block_init!(aux::AdaptiveAux, p::AdaptiveComputation,
                         trace::Gen.Trace)
     aux.accepts = 0
     aux.steps = 0
-    # aux.delta_pi = -100
-    # aux.delta_s = -100
-    # aux.objective = (_, _, delta_pi) = p.objective(trace)
     return nothing
 end
 
 function rw_block_inc!(aux::AdaptiveAux, p::AdaptiveComputation,
                        t, node, alpha)
-    # obj_t_prime = p.objective(t)
-    # aux.delta_pi += p.distance(aux.objective, obj_t_prime)
-    # inc_delta_pi = delta_pi(aux.objective, t)
-    # if inc_delta_pi > 100
-    #     viz_node(t, node)
-    # end
-    # aux.delta_pi = logsumexp(aux.delta_pi, inc_delta_pi)
-    # aux.delta_s[node] = logsumexp(aux.delta_s[node], min(0.0, alpha))
     aux.steps += 1
     return nothing
 end
@@ -193,8 +176,6 @@ function rw_block_accept!(aux::AdaptiveAux,
                           p::AdaptiveComputation,
                           t::Gen.Trace, node)
     aux.accepts += 1
-    # aux.delta_s += 0.01
-    # aux.objective = p.objective(t)
     return nothing
 end
 

@@ -82,7 +82,7 @@ function change_weights(qt::QuadTree)
         log_prop_tiles = 2 * (1 - level(node(x)))
         # uncertainty: 2 * abs(w - 0.5) [0, 1]
         # size: ntiles / total tiles [0, 1]
-        ws[i] = exp(2 + log(abs(0.5 - w)) + log_prop_tiles)
+        ws[i] = fast_sigmoid((2 + log(abs(0.5 - w)) + log_prop_tiles))
     end
     ws = softmax(ws)
 end

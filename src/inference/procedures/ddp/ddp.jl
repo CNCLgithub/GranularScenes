@@ -22,35 +22,12 @@ function _init_dd_state(config_path::String, device::PyObject)
 end
 
 
-# Function used to initialize the chain under `mcmc::kernel_init!`
-function ddp_init_kernel(trace::Gen.Trace, prop_args::Tuple)
-    translator = SymmetricTraceTranslator(dd_state_proposal,
-                                          prop_args,
-                                          dd_state_transform)
-    (new_trace, w1) = translator(trace)
-    # st = get_retval(new_trace)
-    # # REVIEW: probably not neccessary
-    # w2 = 0
-    # for i = 1:length(st.lv)
-    #     node = st.lv[i].node.tree_idx
-    #     s = downstream_selection(new_trace, node)
-    #     (new_trace, _w) = regenerate(new_trace, s)
-    #     w2 += _w
-    # end
-    # @debug "w1 $w1  + w2 $w2 = $(w1 + w2)"
-    # (new_trace, w1 + w2)
-end
-
 # `timg`: taichi field
 function process_ddp_input(timg::PyObject, device::PyObject)
     x = @pycall timg.to_numpy()::Array{Float32, 3}
-    clamp!(x, 0.f0, 1.f0)
-    x = permutedims(x, (3,1,2))
-    # # (x, y, 3) -> (3, x, y)
-    # py"print($x.shape)"
-    # py"print(type($x))"
-    # x = @pycall numpy.moveaxis(timg, -1, 0)::PyObject
-    # x = @pycall numpy.clip(timg, 0., 1.0)::PyObject
+    T = eltype(x)
+    clamp!(x, zero(T), one(T))
+    x = permutedims(x, (3,2,1))
     y = @pycall torch.tensor(x, device = device)::PyObject
     y = @pycall y.unsqueeze(0)::PyObject
     return y

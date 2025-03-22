@@ -1,11 +1,12 @@
-using PyCall
 using JSON
-using FileIO
 using Rooms
+using PyCall
+using FileIO
+using ProgressMeter
 using GranularScenes
-# using Colors: RGB
-# using ImageCore: permutedims, colorview
-using FunctionalCollections: PersistentVector
+
+
+include("/project/scripts/stimuli/room_process.jl")
 
 IMG_RES = (128, 128)
 
@@ -22,33 +23,27 @@ function clear_wall(r::GridRoom)
     GridRoom(r, d)
 end
 
-function build(r::GridRoom;
-               max_f::Int64 = 11,
-               max_size::Int64 = 5,
-               pct_open::Float64 = 0.4,
-               side_buffer::Int64 = 0,
-               factor = 2)
+#################################################################################
+# Trial generation
+#################################################################################
 
-    dims = Rooms.steps(r)
-    # prevent furniture generated in either:
-    # -1 out of sight
-    # -2 blocking entrance exit
-    # -3 hard to detect spaces next to walls
-    weights = Matrix{Bool}(zeros(dims))
-    # ensures that there is no furniture near the observer
-    start_x = Int64(ceil(last(dims) * pct_open))
-    stop_x = last(dims) - 2 # nor blocking the exit
-    # buffer along sides
-    start_y = side_buffer + 1
-    stop_y = first(dims) - side_buffer
-    weights[start_y:stop_y, start_x:stop_x] .= 1.0
-    vmap = PersistentVector(vec(weights))
-
-    # sample obstacles
-    # TODO: rename "furniture*" -> "obstacles*"
-    result = furniture_gm(r, vmap, max_f, max_size)
-    # result = expand(with_furn, factor)
-    clear_wall(result)
+function sample_room!(x, d1, d2)
+    reset_chasis!(x)
+    # clear front of room
+    foreach(c -> clear_col!(x, c), 1:4)
+    # row-14 col-6
+    right_corner = 5 * 16 + 14
+    clear_region!(x, right_corner, 2)
+    # row-2 col-6
+    left_corner = 5 * 16 + 2
+    clear_region!(x, left_corner, 2)
+    # clear near doors
+    clear_region!(x, d1, 2)
+    clear_region!(x, d2, 2)
+    clear_region!(x, d1-2, 1)
+    clear_region!(x, d2+2, 1)
+    sample_room!(x)
+    room_from_process(x)
 end
 
 function save_trial(dpath::String, i::Int64, r::GridRoom,
@@ -74,17 +69,16 @@ end
 function main()
     # Parameters
     # name = "ddp_train_11f_32x32"
-    # n = 1000
+    # n = 10000
     name = "ddp_test_11f_32x32"
     n = 16
 
     hn = Int(n // 2)
     room_dims = (16., 16.)
     room_bins = (16, 16)
-    entrance = [8, 9]
-    door_rows = [5, 12]
-    inds = LinearIndices(room_bins)
-    doors = inds[door_rows, room_bins[2]]
+    start = 8
+    entrance = [start]
+    doors = [252, 244]
 
     # empty rooms with doors
     templates = Vector{GridRoom}(undef, length(doors))
@@ -92,6 +86,7 @@ function main()
         r = GridRoom(room_bins, room_dims, entrance, [doors[i]])
         templates[i] = clear_wall(r)
     end
+    x = RoomProcess(room_bins, start, doors[1])
 
     # will store summary of generated rooms here
     m = Dict(
@@ -106,8 +101,8 @@ function main()
     template = templates[1]
     ti_scene = TaichiScene(template;
                            resolution = IMG_RES)
-    for i = 1:hn
-        r = build(template)
+    @showprogress desc="Sampling door 1" for i = 1:hn
+        r = sample_room!(x, doors[1], doors[2])
         occ = occupancy_position(r)
         # select mitsuba scene
         _mu = GranularScenes.render(ti_scene, r)
@@ -115,11 +110,12 @@ function main()
         save_trial(out, i, r, img, occ)
     end
 
+    x = RoomProcess(room_bins, start, doors[2])
     template = templates[2]
     ti_scene = TaichiScene(template;
                            resolution = IMG_RES)
-    for i = hn:n
-        r = build(template)
+    @showprogress desc="Sampling door 2" for i = hn:n
+        r = sample_room!(x, doors[1], doors[2])
         occ = occupancy_position(r)
         # select mitsuba scene
         _mu = GranularScenes.render(ti_scene, r)

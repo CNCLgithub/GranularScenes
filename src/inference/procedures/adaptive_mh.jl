@@ -108,8 +108,6 @@ function kernel_move!(chain::AMHChain)
         _t, alpha = rw_move(t, node)
         rw_block_inc!(aux, protocol, _t, node, alpha)
         if log(rand()) < alpha # accept?
-            # println("RW weight: $(alpha)")
-            # compare_latents(t, _t, node)
             rw_block_accept!(aux, protocol, _t, node)
             t = _t
         end
@@ -141,20 +139,6 @@ function kernel_move!(chain::AMHChain)
             break
         end
     end
-    # if can_split(t, node)
-    #     moves = balanced_split_merge(t, node) ?
-    #         [split_move, merge_move] : [split_move]
-    #     for i = 1 : remaining_sm
-    #         move = rand(moves)
-    #         _t, _w = split_merge_move(t, node, move)
-    #         if log(rand()) < _w
-    #             sm_block_accept!(aux, node, move)
-    #             sm_block_complete!(aux, protocol, node, move)
-    #             t = _t
-    #             break
-    #         end
-    #     end
-    # end
 
     # update trace
     chain.state = t
@@ -167,8 +151,10 @@ function change_step!(chain::AMHChain)
     trace = estimate(chain)
     proc = estimator(chain)
     for j = 1:proc.rw_budget
-        _t, alpha = regenerate(trace, select(:changes => 1 => :change,
-                                             :changes => 1 => :location))
+        _t, alpha, _ =
+            regenerate(trace,
+                       select(:changes => 1 => :change,
+                              :changes => 1 => :location))
         if log(rand()) < alpha # accept?
             trace = _t
         end
@@ -215,14 +201,10 @@ function viz_chain(chain::AMHChain)
     att = draw_mat(attm, true, colorant"black", colorant"red")
     display(reduce(hcat, [geo, pth, att]))
 
-    loc = ex_loc_change(chain)
-    display_mat(loc)
+    # loc = ex_loc_change(chain)
+    # display_mat(loc)
     return nothing
 end
 
 # function display_selected_node(sidx, dims)
 #     bs = zeros(dims)
-#     bs[sidx] .= 1
-#     println("Selected node")
-#     display_mat(bs)
-# end

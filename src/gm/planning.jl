@@ -158,9 +158,11 @@ function qt_astar_impl!(
             in(neighbor, closed_set) && continue
             n_state = leaf_from_idx(qt, neighbor)
             # tc = traversal_cost(cur_state, n_state, dw)
-            (tc, grad) = tcost_wgrad(cur_state, n_state, dw)
-            gradients[current] = get(gradients, current, 0.0) + grad
-            gradients[neighbor] = get(gradients, neighbor, 0.0) + grad
+            (tc, cur_grad, n_grad) = tcost_wgrad(cur_state, n_state, dw)
+            # gradients[current] = cur_grad
+            # gradients[neighbor] = n_grad
+            gradients[current] = get(gradients, current, 0.0) + cur_grad
+            gradients[neighbor] = get(gradients, neighbor, 0.0) + n_grad
             visits[current] = get(visits, current, 0) + 1
             visits[neighbor] = get(visits, neighbor, 0) + 1
             tentative_g_score = g_score[current] + tc
@@ -193,15 +195,33 @@ function reconstruct_path!(
     return nothing
 end
 
+function collision_score(x::QTAggNode)
+    # prop of tiles that are obstacles
+    w = weight(x)
+    # fewest number of tiles through node
+    # eg., node level 1 : 16x16 -> 16 steps
+    #                 3 :  4x4  ->  4 steps
+    n = node(x)
+    c = exp2(level(n) - 1)
+    w * c # expected number of collisions
+    # # Probability of no collision in c steps
+    # logpnocol = log1mexp(logw) * c
+    # log1mexp(logpnocol)
+end
+
 function traversal_cost(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
-    d = dist(node(dst), node(src))
-    c = obs_cost * (weight(dst) * length(dst) + weight(src) * length(src))
-    d + c
+    # d = dist(node(dst), node(src))
+    # Probablility don't collide
+    cost_src = collision_score(src)
+    cost_dst = collision_score(dst)
+    obs_cost * (cost_src + cost_dst)
+    # c = obs_cost * (weight(dst) * length(dst) + weight(src) * length(src))
+    # d + c
 end
 
 function tcost_wgrad(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
     cost, raw_grads = withgradient(traversal_cost, src, dst, obs_cost)
-    raw_grad = raw_grads[1]
-    grad = abs(raw_grad[:mu]) + norm(raw_grad[:node][:center])
-    return (cost, grad)
+    src_grad = abs(raw_grads[1][:mu])
+    dst_grad = abs(raw_grads[2][:mu])
+    return (cost, src_grad, dst_grad)
 end
