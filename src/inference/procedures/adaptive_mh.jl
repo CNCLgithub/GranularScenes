@@ -50,8 +50,8 @@ function Gen_Compose.initialize_chain(proc::AdaptiveMH,
                            query.args,
                            constraints)
 
-    # println("Initial state")
-    # display_mat(project_qt(get_retval(trace)))
+    println("Initial state")
+    display_mat(project_qt(get_retval(trace)))
 
     # initialize auxillary state
     aux = AuxState(proc.protocol, trace)
@@ -171,7 +171,7 @@ function viz_chain(log::ChainLogger)
     pth = draw_mat(marginalize(bfr, :path),
                    true, colorant"black", colorant"green")
     attm = marginalize(bfr, :attention)
-    attm = softmax(attm, 1.0)
+    attm = softmax(attm, 0.75)
     lmul!(1.0 / maximum(attm), attm)
     att = draw_mat(attm,
                    true, colorant"black", colorant"red")

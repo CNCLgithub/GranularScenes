@@ -78,8 +78,11 @@ function parse_commandline(c)
     return parse_args(c, s)
 end
 
+# NOTE: This is needed due to the fact that the window-0.1/* datasets
+# do not store wall information; the leads to weird depth map values
+# and can throw off the DDP VAE.
 function fix_room(r::GridRoom, door::Int)
-    template = GridRoom((16, 16), (16., 16.), [8], [door])
+    template = GridRoom((16, 16), (16., 16.), [9], [door])
     # remove wall near camera
     d = data(template)
     d[:, 1:2] .= floor_tile
@@ -167,12 +170,12 @@ function main(c=ARGS)
 
     model = "$(attention)_$(granularity)"
 
-    # doors = [2]
-    # door_tiles = [252]
+    doors = [2]
+    door_tiles = [253]
     # doors = [1]
-    # door_tiles = [244]
-    doors = [2,1]
-    door_tiles = [252, 244]
+    # door_tiles = [243]
+    # doors = [2,1]
+    # door_tiles = [252, 244]
 
     results = DataFrame(
         :door => Int64[],
@@ -204,7 +207,7 @@ function main(c=ARGS)
 
         img = GranularScenes.render(gm_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                     var = 0.325)
+                                     var = 0.13)
         ddp_cm = generate_cm_from_ddp(ddp_params, img, gm_params, 3, 4)
 
 

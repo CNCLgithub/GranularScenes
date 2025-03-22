@@ -210,11 +210,11 @@ function collision_score(x::QTAggNode)
 end
 
 function traversal_cost(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
-    # d = dist(node(dst), node(src))
+    d = dist(node(dst), node(src))
     # Probablility don't collide
     cost_src = collision_score(src)
     cost_dst = collision_score(dst)
-    obs_cost * (cost_src + cost_dst)
+    obs_cost * (cost_src + cost_dst) + d
     # c = obs_cost * (weight(dst) * length(dst) + weight(src) * length(src))
     # d + c
 end

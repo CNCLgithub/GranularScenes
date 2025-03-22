@@ -146,7 +146,7 @@ accepts(aux::AdaptiveAux) = aux.accepts
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
     ks = collect(keys(aux.queue))
     raw = collect(values(aux.queue))
-    clamp!(raw, 0.01, Inf)
+    # clamp!(raw, 0.01, Inf)
     ws = softmax(raw, aux.temp) # TODO: add as hyperparameter
     nidx = categorical(ws)
     node = ks[nidx]

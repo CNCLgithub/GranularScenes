@@ -18,7 +18,8 @@ using GranularScenes:
     tree_idx,
     max_leaves,
     leaf_from_idx,
-    node_to_idx
+    node_to_idx,
+    qt_from_state
 
 using Random
 # Random.seed!(1101)
@@ -49,28 +50,30 @@ end
 function mytest()
 
     scene = 2
-    door = 1
+    door = 2
     base_path = "/spaths/datasets/$(dataset)/scenes"
     base_p = joinpath(base_path, "$(scene)_$(door).json")
     room = load_base_scene(base_p)
     display(room)
+
+    state = zeros(Rooms.steps(room))
+    state[data(room) .== obstacle_tile] .= 1.0
+
     model_params = QuadTreeModel(room)
 
-    cm = choicemap()
-    cm[:trackers => (1, Val(:production)) => :produce] = true
-    tr, ls = generate(qt_model, (model_params,), cm)
+    cm, nnodes = qt_from_state(0.12, state, model_params)
+    println("Leaves: $(nnodes)")
+    tr, ls = generate(qt_model, (0, model_params,), cm)
 
     @time plan = cost, path, grads = quad_tree_path(tr)
     @show path
-    draw_gradients(tr, grads)
 
     qt = get_retval(tr)
-    println("\n\nInferred state + Path + Attention")
     geo = draw_mat(project_qt(qt), true, colorant"black", colorant"blue")
-    # println("Estimated path")
     path = Matrix{Float64}(ex_path(tr))
     pth = draw_mat(path, true, colorant"black", colorant"green")
     display(reduce(hcat, [geo, pth]))
+    draw_gradients(tr, grads)
 
     # tprime, _ = rw_move(tr, 13)
     # plan = cost, path, grads = quad_tree_path(tprime)

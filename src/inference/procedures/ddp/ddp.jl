@@ -33,17 +33,10 @@ function process_ddp_input(timg::PyObject, device::PyObject)
     return y
 end
 
-function generate_cm_from_ddp(ddp_params::DataDrivenState,
-                              timg, model_params,
-                              min_depth::Int64 = 1,
-                              max_depth::Int64 = 5)
-    @unpack nn, device, var = ddp_params
-
-    img = process_ddp_input(timg, device)
-    x = @pycall nn.forward(img)::PyObject
-    state = @pycall x.detach().squeeze(0).cpu().numpy()::Matrix{Float64}
-    println("Data-driven state")
-    display_mat(state)
+function qt_from_state(var::Float64, state::Matrix{Float64},
+                       model_params::QuadTreeModel,
+                       min_depth::Int64 = 1,
+                       max_depth::Int64 = 5)
     head = model_params.start_node
     d = model_params.dims[2]
     # Iterate through QT
@@ -56,9 +49,8 @@ function generate_cm_from_ddp(ddp_params::DataDrivenState,
         mu = mean(state[idx])
         sd = length(idx) == 1 ? 0. : std(state[idx], mean = mu)
         # @show sd
-        # split = sd > ddp_params.var && head.level < head.max_level
         # restricting depth of nn
-        split = head.level < min_depth || (sd > ddp_params.var && head.level < max_depth)
+        split = head.level < min_depth || (sd > var && head.level < max_depth)
         cm[:trackers => (head.tree_idx, Val(:production)) => :produce] = split
         if split
             # add children to queue
@@ -69,9 +61,21 @@ function generate_cm_from_ddp(ddp_params::DataDrivenState,
             nodes += 1
         end
     end
-    # for i = 1:nodes
-    #     cm[:loc_prior => i => :b] = 0.0
-    # end
+    return cm, nodes
+end
+
+function generate_cm_from_ddp(ddp_params::DataDrivenState,
+                              timg, model_params,
+                              min_depth::Int64 = 1,
+                              max_depth::Int64 = 5)
+    @unpack nn, device, var = ddp_params
+
+    img = process_ddp_input(timg, device)
+    x = @pycall nn.forward(img)::PyObject
+    state = @pycall x.detach().squeeze(0).cpu().numpy()::Matrix{Float64}
+    println("Data-driven state")
+    display_mat(state)
+    cm, nodes = qt_from_state(ddp_params.var, state, model_params, min_depth, max_depth)
     println("DDP yielded $nodes qt leaves")
     return cm
 end

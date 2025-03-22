@@ -168,7 +168,7 @@ end
 # REVIEW: Some way to parameterize weights?
 function produce_weight(n::QTProdNode)::Float64
     @unpack level, max_level = n
-    level == max_level ? 0. : 0.35
+    level == max_level ? 0. : 0.5
     # level == 1 ? 0.99 :
     #     (level == max_level ? 0. : 0.35)
 end

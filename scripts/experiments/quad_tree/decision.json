@@ -1,5 +1,5 @@
 {
-    "train_steps": 100,
+    "train_steps": 200,
     "test_steps": 100,
     "margin_size": 50,
     "kl_threshold": 100.0,
