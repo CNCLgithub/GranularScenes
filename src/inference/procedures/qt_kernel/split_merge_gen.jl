@@ -98,7 +98,7 @@ end
 is_involution!(qt_involution)
 
 
-@gen function qt_branch_proposal(t::Gen.Trace, i::Int64)
+@gen function qt_branch_proposal(t::QTTrace, i::Int64)
     qt::QuadTree = get_retval(t)
     st::QTAggNode = traverse_qt(qt, i)
     # `st` could be parent if t' is a result of merge
@@ -126,13 +126,14 @@ function qt_involution_incremental(trace, fwd_choices::ChoiceMap, fwd_ret::Tuple
 
     (subtree_idx, _...) = fwd_ret
     model_args = get_args(trace)
+    arg_diffs = (Gen.NoChange(), Gen.NoChange())
 
     # populate constraints
     constraints = choicemap()
     set_submap!(constraints, :trackers, get_submap(fwd_choices, :new_branch))
 
     # obtain new trace and discard, which contains the previous subtree
-    (new_trace, weight, _, discard) = update(trace, model_args, (NoChange(),), constraints)
+    (new_trace, weight, _, discard) = update(trace, model_args, arg_diffs, constraints)
 
     # populate backward assignment
     bwd_choices = choicemap()

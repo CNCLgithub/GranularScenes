@@ -4,6 +4,7 @@ using Colors
 using ImageIO
 using ImageCore: colorview
 using ImageInTerminal
+using LinearAlgebra: lmul!
 
 export save_img_array,
     softmax,
@@ -39,8 +40,11 @@ function display_mat(m::Matrix;
     return nothing
 end
 
-function display_img(m::Array{Float64, 3})
-    img = colorview(RGB, permutedims(m, (3,1,2)))
+function display_img(m::Array{<:T, 3}) where {T<:Real}
+    if size(m, 1) > 3
+        m = permutedims(m, (3, 2, 1))
+    end
+    img = colorview(RGB, m)
     display(img)
     return nothing
 end
@@ -51,7 +55,7 @@ end
 #################################################################################
 
 function process_taichi_array(array::PyObject)
-    arr = @pycall array.to_numpy()::Array
+    arr = @pycall array.to_numpy()::Array{Float32, 3}
     reverse!(arr, dims = 1)
     reverse!(arr, dims = 2)
     return arr
@@ -61,10 +65,10 @@ function save_img_array(array::PyObject, path::String)
     save_img_array(process_taichi_array(array), path)
 end
 
-function save_img_array(array::Array, path::String)
-    _array = permutedims(array, (3,2,1))
-    clamp!(_array, 0., 1.0)
-    img = colorview(RGB, _array)
+function save_img_array(array::Array{T}, path::String) where {T}
+    x = permutedims(array, (3,2,1))
+    clamp!(x, zero(T), one(T))
+    img = colorview(RGB, x)
     save(path, img)
 end
 
@@ -120,14 +124,106 @@ end
 #     isnan(sxs) || iszero(sxs) ? fill(1.0/n, n) : exs ./ sxs
 # end
 
+abstract type MarginalType end
 
-function softmax(x::Array{Float64}, t::Float64 = 1.0)
+"""Discrete values of n categories of type T"""
+struct DiscreteMarginal{T} <: MarginalType
+end
+
+function check_format(m::DiscreteMarginal{T}, bfr, key) where {T}
+    @assert length(bfr) > 0 "Cannot marginalize over no samples"
+    sample = bfr[1][key]
+    st = typeof(sample)
+    @assert st <: T "Marginal type missmatch: $(st) ≠ $(T)"
+    return nothing
+end
+
+"""Continuous values of n dimensions of type T"""
+@with_kw struct ContinuousMarginal{T} <: MarginalType
+    op::Function = (+)
+    norm::Function = (x, n::Integer) -> x / n
+    id::Function = (A::Type) -> zero(A)
+end
+
+function ContinuousMarginal(::Type{T}) where {T<:AbstractArray}
+    ContinuousMarginal{T}(; id = (A::Type{T}) -> zero(eltype(A)))
+end
+
+function check_format(m::ContinuousMarginal{T}, bfr, key) where {T}
+    n = length(bfr)
+    @assert n > 0 "Cannot marginalize over no samples"
+    sample = bfr[1][key]
+    @assert typeof(sample) <: T "Marginal type missmatch"
+    return nothing
+end
+
+function marginalize(m::DiscreteMarginal{T}, bfr, key::Symbol) where {T<:Bool}
+    check_format(m, bfr, key)
+    n = length(bfr)
+    acc = 0.0
+    for sample in bfr
+        if sample[key]
+            acc += 1
+        end
+    end
+    acc / n
+end
+
+function marginalize(m::DiscreteMarginal{T}, bfr, key::Symbol) where {T}
+    check_format(m, bfr, key)
+    n = length(bfr)
+    acc = Dict{T, Int}()
+    for sample in bfr
+        v = sample[key]
+        acc[v] = get(acc, v, 0) + 1
+    end
+    map!(x -> x / n, values(acc))
+    return acc
+end
+
+function marginalize(m::ContinuousMarginal{T}, bfr, key::Symbol) where {T<:AbstractArray}
+    check_format(m, bfr, key)
+    n = length(bfr)
+    #REVIEW: eltype instead of f64?
+    marginal = similar(bfr[1][key], Float64)
+    fill!(marginal, m.id(T))
+    for i = 1:n
+        datum = bfr[i][key]
+        for j = eachindex(marginal)
+            marginal[j] = m.op(marginal[j], datum[j])
+        end
+    end
+    @inbounds for j = eachindex(marginal)
+        marginal[j] = m.norm(marginal[j], n)
+    end
+    marginal
+end
+
+
+function marginalize(m::ContinuousMarginal{T}, bfr, key::Symbol) where {T<:Real}
+    check_format(m, bfr, key)
+    n = length(bfr)
+    marginal = m.id(T)
+    for i = 1:n
+        marginal = m.op(marginal, bfr[i][key])
+    end
+    m.norm(marginal, n)
+end
+
+function marginalize(bfr, key::Symbol)
+    n = length(bfr)
+    @assert n > 0
+    T = typeof(bfr[1][key])
+    marginalize(ContinuousMarginal(T), bfr, key)
+end
+
+function softmax(x::Array{<:Real}, t::Real = 1.0)
     out = similar(x)
     softmax!(out, x, t)
     return out
 end
 
-function softmax!(out::Array{Float64}, x::Array{Float64}, t::Float64 = 1.0)
+function softmax!(out::Array{<:Real}, x::Array{<:Real}, t::Real = 1.0)
     nx = length(x)
     maxx = maximum(x)
     sxs = 0.0
@@ -155,6 +251,20 @@ function safe_uniform_weights(x)::Vector{Float64}
     n = length(x) + 1
     ws = fill(1.0 / n, n)
     return ws
+end
+
+function fast_sigmoid(x::Float64)
+    2 * x / (1.0 + abs(x))
+end
+
+const NEGLN2 = -log(2)
+
+"""
+Numerically accurate evaluation of log(1 - exp(x)) for x < 0.
+See [Maechler2012accurate] https://cran.r-project.org/web/packages/Rmpfr/vignettes/log1mexp-note.pdf
+"""
+function log1mexp(x::Float64)
+    x  > NEGLN2 ? log(-expm1(x)) : log1p(-exp(x))
 end
 
 #################################################################################

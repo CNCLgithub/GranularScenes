@@ -1,4 +1,5 @@
 using DataStructures
+using Zygote: withgradient
 
 export QTPath,
     qt_a_star
@@ -98,6 +99,11 @@ function qt_a_star(qt::QuadTree, dw::Float64, ent::Int64, ext::Int64)
     g_score = Dict{Int64, Float64}()
     g_score[ent_idx] = 0
 
+
+    visits = Dict{Int64, Int64}()
+    gradients = Dict{Int64, Float64}()
+    gradients[ent_idx] = 0 # REVIEW: value?
+
     came_from = Dict{Int64, Int64}()
     came_from[ent_idx] = ent_idx
 
@@ -110,6 +116,8 @@ function qt_a_star(qt::QuadTree, dw::Float64, ent::Int64, ext::Int64)
         closed_set,
         g_score,
         came_from,
+        gradients,
+        visits,
         heuristic,
         qt,
         dw
@@ -124,6 +132,8 @@ function qt_astar_impl!(
     closed_set, # an (initialized) color-map to indicate status of vertices
     g_score, # a vector holding g scores for each node
     came_from, # a vector holding the parent of each node in the A* exploration
+    gradients::Dict{Int64, Float64},
+    visits::Dict{Int64, Int64},
     heuristic,
     qt::QuadTree, dw::Float64)
 
@@ -137,7 +147,7 @@ function qt_astar_impl!(
         if current == goal
             reconstruct_path!(total_path, came_from, current)
             score = g_score[current]
-            return score, total_path
+            return score, total_path, gradients
         end
 
         push!(closed_set, current)
@@ -147,8 +157,15 @@ function qt_astar_impl!(
         for neighbor in adj
             in(neighbor, closed_set) && continue
             n_state = leaf_from_idx(qt, neighbor)
-            tentative_g_score = g_score[current] +
-                traversal_cost(cur_state, n_state, dw)
+            # tc = traversal_cost(cur_state, n_state, dw)
+            (tc, cur_grad, n_grad) = tcost_wgrad(cur_state, n_state, dw)
+            # gradients[current] = cur_grad
+            # gradients[neighbor] = n_grad
+            gradients[current] = get(gradients, current, 0.0) + cur_grad
+            gradients[neighbor] = get(gradients, neighbor, 0.0) + n_grad
+            visits[current] = get(visits, current, 0) + 1
+            visits[neighbor] = get(visits, neighbor, 0) + 1
+            tentative_g_score = g_score[current] + tc
 
             if tentative_g_score < get(g_score, neighbor, Inf)
                 g_score[neighbor] = tentative_g_score
@@ -158,7 +175,10 @@ function qt_astar_impl!(
             end
         end
     end
-    return score, total_path
+    for (k, v) = gradients
+        gradients[k] = v / visits[k]
+    end
+    return score, total_path, gradients
 end
 
 function reconstruct_path!(
@@ -175,10 +195,33 @@ function reconstruct_path!(
     return nothing
 end
 
+function collision_score(x::QTAggNode)
+    # prop of tiles that are obstacles
+    w = weight(x)
+    # fewest number of tiles through node
+    # eg., node level 1 : 16x16 -> 16 steps
+    #                 3 :  4x4  ->  4 steps
+    n = node(x)
+    c = exp2(level(n) - 1)
+    w * c # expected number of collisions
+    # # Probability of no collision in c steps
+    # logpnocol = log1mexp(logw) * c
+    # log1mexp(logpnocol)
+end
+
 function traversal_cost(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
     d = dist(node(dst), node(src))
-    # c = obs_cost * (weight(dst) * length(node(dst)) +
-    #     weight(src) * length(node(src)))
-    c = obs_cost * (weight(dst) + weight(src))
-    d + c
+    # Probablility don't collide
+    cost_src = collision_score(src)
+    cost_dst = collision_score(dst)
+    obs_cost * (cost_src + cost_dst) + d
+    # c = obs_cost * (weight(dst) * length(dst) + weight(src) * length(src))
+    # d + c
+end
+
+function tcost_wgrad(src::QTAggNode, dst::QTAggNode, obs_cost::Float64)
+    cost, raw_grads = withgradient(traversal_cost, src, dst, obs_cost)
+    src_grad = abs(raw_grads[1][:mu])
+    dst_grad = abs(raw_grads[2][:mu])
+    return (cost, src_grad, dst_grad)
 end

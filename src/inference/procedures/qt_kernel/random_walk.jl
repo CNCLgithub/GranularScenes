@@ -1,16 +1,25 @@
 export rw_move
 
-@gen function qt_node_random_walk(t::Gen.Trace, i::Int64)
-    addr = :trackers => (i, Val(:aggregation)) => :mu
-    mu::Float64 = t[addr]
-    low::Float64 = max(0., mu - 0.3)
-    high::Float64 = min(1., mu + 0.3)
-    # @show (low, high)
-    {addr} ~ uniform(low, high)
+@gen function qt_node_random_walk(t::QTTrace, i::Int64)
+    phase, _ = get_args(t)
+    if phase == 0 
+        qt_addr = :trackers => (i, Val(:aggregation)) => :mu
+        mu::Float64 = t[qt_addr]
+        dmu = 0.2
+        {qt_addr} ~ uniform(max(0., mu - dmu), min(1., mu + dmu))
+    else
+        # qt = get_retval(t)
+        # leaf_vec_idx = qt.mapping[i]
+        # loc_addr = :changes => 1 => leaf
+        # mu = t[loc_addr]
+        # dmu = 0.1
+        # {loc_addr} ~ uniform(max(0., mu - dmu), min(1., mu + dmu))
+    end
+    return nothing
 end
 
-function rw_move(t::Gen.Trace, i::Int64)
-    (new_trace, w1) = apply_random_walk(t, qt_node_random_walk, (i,))
+function rw_move(t::QTTrace, i::Int64)
+    (t, w) = apply_random_walk(t, qt_node_random_walk, (i,))
 end
 
 function rw_move(::NoChange, t::Gen.Trace, i::Int64)

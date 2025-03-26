@@ -2,8 +2,8 @@ mode: 'og_decoder'
 
 model_params:
   input_dim: 1
-  latent_dim: 8
-  hidden_dim: 16
+  latent_dim: 32
+  hidden_dim: 64
 
 vae_chkpt: "/spaths/checkpoints/scene_vae.ckpt"
 
@@ -19,12 +19,12 @@ loader_params:
 exp_params:
   lr: 1.0e-4
   weight_decay: 0.0
-  sched_gamma: 0.975
+  sched_gamma: 0.99
 
 manual_seed: 1265
 
 trainer_params:
-  max_epochs: 100
+  max_epochs: 200
 
 logging_params:
   save_dir: "/spaths/checkpoints"

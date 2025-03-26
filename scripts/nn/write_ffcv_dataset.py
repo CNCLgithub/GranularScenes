@@ -22,8 +22,7 @@ def main():
                         default = 4)
 
     args = parser.parse_args()
-    dpath = os.path.join('/spaths/datasets', args.src)
-    d = OGVAEDataset(dpath)
+    d = OGVAEDataset(args.src)
     img_kwargs = dict()
     og_kwargs = dict(
         shape = d.manifest['og_shape'],
@@ -32,7 +31,7 @@ def main():
     writer_kwargs = dict(
         num_workers = args.num_workers
     )
-    path = dpath + '.beton'
+    path = args.src + '.beton'
     write_ffcv_data(d, path, img_kwargs, og_kwargs, writer_kwargs)
 
 if __name__ == '__main__':

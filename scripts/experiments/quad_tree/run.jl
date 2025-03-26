@@ -4,10 +4,10 @@ using JLD2
 using Rooms
 using FileIO
 using ArgParse
-using Accessors
+using DataFrames
 using Gen_Compose
 using GranularScenes
-
+import GranularScenes as GS
 
 function parse_commandline(c)
     s = ArgParseSettings()
@@ -17,7 +17,7 @@ function parse_commandline(c)
         "--dataset"
         help = "Trial dataset"
         arg_type = String
-        default = "path_block_2024-03-14"
+        default = "window-0.1/2025-02-05_vifdDO"
 
         "--gm"
         help = "Generative Model params"
@@ -67,40 +67,60 @@ function parse_commandline(c)
         "chain"
         help = "The number of chains to run"
         arg_type = Int
-        default = 1
+        default = 5
 
     end
 
     return parse_args(c, s)
 end
 
-function clear_wall(r::GridRoom)
+# NOTE: This is needed due to the fact that the window-0.1/* datasets
+# do not store wall information; the leads to weird depth map values
+# and can throw off the DDP VAE.
+function fix_room(r::GridRoom, ent::Int, door::Int)
+    template = GridRoom((16, 16), (16., 16.), [ent], [door])
     # remove wall near camera
-    d = data(r)
+    d = data(template)
     d[:, 1:2] .= floor_tile
-    GridRoom(r, d)
+    for i = eachindex(data(r))
+        if data(r)[i] == obstacle_tile
+            d[i] = obstacle_tile
+        end
+    end
+    GridRoom(template, d)
 end
 
-function load_scene(path::String)
+function load_scene(path::String, ent::Int, door::Int)
     local base_s
     open(path, "r") do f
         base_s = JSON.parse(f)
     end
-    # base = expand(from_json(GridRoom, base_s), 2)
     base = from_json(GridRoom, base_s)
-    clear_wall(base)
+    fix_room(base, ent, door)
 end
 
 function block_tile(r::GridRoom, tidx::Int)
+    tidx == 0 && return r
     d = deepcopy(data(r))
     d[tidx] = obstacle_tile
     cidx = CartesianIndices(Rooms.steps(r))[tidx]
-    println("Blocked tile at location $(cidx)")
+    println("Blocked tile $(tidx) at location $(cidx)")
     GridRoom(r, d)
 end
 
-function main(c=ARGS)
-    args = parse_commandline(c)
+function init_results()
+    DataFrame(
+        :gt => Symbol[],
+        :scene => Int64[],
+        :door => Symbol[],
+        :chain => Int64[],
+        :pr_same => Float64[],
+        :pr_change => Float64[],
+        :ratio => Float64[],
+    )
+end
+
+function run_scene(args)
 
     dataset = args["dataset"]
     base_path = "/spaths/datasets/$(dataset)/scenes"
@@ -111,24 +131,32 @@ function main(c=ARGS)
     args["restart"] = true
 
     manifest = CSV.File(base_path * ".csv")
-    tile = manifest[:tidx][scene]
-
+    tile = manifest[:blocked][scene]
 
     attention = args["attention"]
     granularity = args["granularity"]
 
     model = "$(attention)_$(granularity)"
 
-    doors = [2]
+    doors = [2,1]
+    door_tiles = [252, 244]
+    ent_tiles = [9, 8]
 
-    for door = doors
-        out_path = "/spaths/experiments/flicker_$(dataset)_$(model)/$(scene)_$(door)"
-        if args["reverse"]
-            out_path *= "_reversed"
-        end
+    results = DataFrame(
+        :gt => Symbol[],
+        :scene => Int64[],
+        :door => Symbol[],
+        :chain => Int64[],
+        :pr_same => Float64[],
+        :pr_change => Float64[],
+        :ratio => Float64[],
+    )
 
-        base_p = joinpath(base_path, "$(scene)_$(door).json")
-        room1 = load_scene(base_p)
+    for (door, door_tile, ent_tile) = zip(doors, door_tiles, ent_tiles)
+        out_path = "/spaths/experiments/$(dataset)_$(model)/$(scene)_$(door)"
+
+        base_p = joinpath(base_path, "$(scene).json")
+        room1 = load_scene(base_p, door_tile, ent_tile)
         room2 = block_tile(room1, tile)
 
         gm_params = QuadTreeModel(room1;
@@ -140,49 +168,27 @@ function main(c=ARGS)
 
         dargs = read_json(args["decision"])
 
-        q1 = query_from_params(room1, gm_params)
-        q2 = query_from_params(room2, gm_params)
+        q0 = query_from_params(room1, gm_params)
+        q_change = extend_query(q0, room2)
+        q_same = extend_query(q0, room1)
 
-
-        model_params = first(q1.args)
-        img = GranularScenes.render(model_params.renderer, room1)
+        img = GranularScenes.render(gm_params.renderer, room1)
         ddp_params = DataDrivenState(;config_path = args["ddp"],
-                                     var = 0.25)
+                                     var = 0.13)
+        ddp_cm = generate_cm_from_ddp(ddp_params, img, gm_params, 3, 4)
 
 
-        proc_1_kwargs = read_json(args["proc"])
-        proc_2_kwargs = deepcopy(proc_1_kwargs)
+        proc_kwargs = read_json(args["proc"])
 
-        proc_1_kwargs[:ddp]  = generate_cm_from_ddp
-        proc_1_kwargs[:ddp_args] = (ddp_params, img, model_params, 3, 3)
-        proc_2_kwargs[:ddp]  = generate_cm_from_ddp
-        proc_2_kwargs[:ddp_args] = (ddp_params, img, model_params, 3, 3)
-
+        # HACK: Instead, rework `AdaptiveMH` or right-hand of query
+        proc_kwargs[:ddp]  = (_...) -> deepcopy(ddp_cm)
 
         protocol = attention == :ac ?
             AdaptiveComputation() : UniformProtocol()
-        proc_1_kwargs[:protocol] =
-            proc_2_kwargs[:protocol] = protocol
+        proc_kwargs[:protocol] = protocol
 
 
-        if granularity == :fixed
-            # TODO: Update this branch
-            proc_1_kwargs[:ddp] = fixed_granularity_cm
-            proc_1_kwargs[:ddp_args] = (gm_params, 5) # HACK: hard coded
-            proc_2_kwargs[:ddp] = generate_cm_from_ppd
-            proc_2_kwargs[:ddp_args] = (gm_params,
-                                           0.0) # 0 var forces max split
-            # No split-merge moves
-            proc_1_kwargs[:sm_budget] =
-                proc_2_kwargs[:sm_budget] = 0
-        # REVIEW: no longer needed?
-        # else
-        #     proc_2_kwargs[:ddp] = generate_cm_from_ppd
-        #     proc_2_kwargs[:ddp_args] = (gm_params,
-        #                                    0.0175)
-        end
-        proc_1 = AdaptiveMH(; proc_1_kwargs...)
-        proc_2 = AdaptiveMH(; proc_2_kwargs...)
+        proc = AdaptiveMH(; proc_kwargs...)
 
         try
             isdir("/spaths/experiments/$(dataset)_$(model)") ||
@@ -193,46 +199,65 @@ function main(c=ARGS)
         end
 
         # how many chains to run
-        for c = 1:args["chain"]
-            # Random.seed!(c)
-            c1_out = joinpath(out_path, "c1_$(c).jld2")
-            c2_out = joinpath(out_path, "c2_$(c).jld2")
-            outs = [c1_out, c2_out]
-            complete = false
-            if any(isfile, outs)
-                println("Record(s) found for chain: $(c)")
+        for chain_idx = 1:args["chain"]
+
+            chain_path = "$(out_path)/chain_summary_$(chain_idx).csv"
+
+            if isfile(chain_path)
                 if args["restart"]
-                    println("restarting")
-                    foreach(o -> isfile(o) && rm(o), outs)
+                    println("Redoing chain $(chain_idx)...")
+                    rm(chain_path)
                 else
-                    complete = all(isfile, outs)
+                    println("Chain $(chain_idx) already completed.")
+                    continue
                 end
             end
-            if !complete
-                println("Starting chain $c")
-                chain_steps = dargs[:epoch_steps] * dargs[:epochs]
-                log1 = MemLogger(dargs[:margin_size])
-                log2 = MemLogger(dargs[:margin_size])
-                c1 = Gen_Compose.initialize_chain(proc_1, q1, chain_steps)
-                c2 = Gen_Compose.initialize_chain(proc_2, q2, chain_steps)
-                e = 1; klm = zeros(16, 16); max_kl = 0.0; cidx = CartesianIndex(0, 0);
-                while e < dargs[:epochs] && max_kl < dargs[:kl_threshold]
-                    (klm, max_kl, cidx, eloc) =
-                        search_step!(c1, c2, log1, log2,
-                                     dargs[:epoch_steps],
-                                     dargs[:search_weight])
-                    e += 1
-                end
-                # println("Inference END")
-                # GranularScenes.viz_chain(c1)
-                # GranularScenes.viz_chain(c2)
-                # println("Expected $(eloc); Max KL: $(max_kl), @ index $(cidx)")
-                # GranularScenes.display_mat(klm)
+
+            println("Starting train chain $(chain_idx)")
+            l0 = MemLogger(dargs[:margin_size])
+            total_steps = dargs[:train_steps] + 2 * dargs[:test_steps]
+            # Infer Pr(S | X0)
+            c0 = Gen_Compose.initialize_chain(proc, q0, total_steps)
+            GS.train!(c0, l0, dargs[:train_steps])
+            # TODO: record something about training
+            println("Chain after X_0")
+            GranularScenes.viz_chain(l0)
+
+            results = init_results()
+            for (gt, q1) = zip([:change, :same], [q_change, q_same])
+                c1, l1 = fork(c0, l0)
+                # Evaluate Pr(X1 = X0 | S, Change = F)
+                # NOTE: This is cached into the c0 chain
+                # without impacting the acceptance ratio
+                prob_same = test_same(c1, l1, q1)
+
+                # Evaluate Pr(X1 | S, Change = T, Loc = *)
+                extend_chain!(c1, q1)
+                prob_change = test_change!(c1, l1, dargs[:test_steps])
+
+                # Decision
+                dweight = prob_change - prob_same
+
+                push!(results,
+                      (gt, scene, door == 2 ? :on : :off, chain_idx,
+                       prob_same, prob_change, dweight))
+
             end
-            println("Chain $(c) complete")
+            println("Chain $(chain_idx) complete")
+            display(results)
+            CSV.write(chain_path, results)
         end
     end
     return nothing
+end
+
+
+function main(c=ARGS)
+    args = parse_commandline(c)
+    for scene = 6:6
+        args["scene"] = scene
+        run_scene(args)
+    end
 end
 
 main();

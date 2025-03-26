@@ -13,9 +13,9 @@ using Gen: logsumexp
 np = pyimport("numpy")
 
 # assuming scenes are 32x32
-dataset = "path_block_2024-03-14"
+dataset = "window-0.1/2025-02-05_vifdDO"
 model = "ac"
-scenes = 1:6
+scenes = 1:10
 exp_path = "/spaths/experiments/$(dataset)_$(model)"
 burnin = 50
 chains = 30

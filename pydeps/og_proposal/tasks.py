@@ -125,7 +125,7 @@ class OGDecoder(pl.LightningModule):
         if x.shape[1] == 3:
             x = x[:, 0:1, :, :]
         dist = self.encoder.model.encode(x)
-        z = self.encoder.model.reparameterize(dist)
+        z = dist.mean # self.encoder.model.reparameterize(dist)
         return self.decoder(z)
 
     # def determ_forward(self, x: Tensor) -> Tensor:
