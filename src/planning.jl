@@ -1,4 +1,4 @@
-export search_step!, train!, test!
+export search_step!, train!, test_change!, test_same
 
 using LinearAlgebra: lmul!
 using Zygote: withgradient
@@ -26,17 +26,28 @@ function train!(c::AMHChain, log::ChainLogger,
     return nothing
 end
 
-function test!(c::AMHChain, log::ChainLogger,
+function test_same(c::AMHChain, logger::ChainLogger, q1)
+    prob_same(c, q1)
+    # m = ContinuousMarginal{Float64}(;
+    #                                 op = logsumexp,
+    #                                 norm = (x, n) -> x - log(n),
+    #                                 id = x -> -Inf)
+    # marginalize(m, buffer(logger), :prob_same)
+end
+
+function test_change!(c::AMHChain, logger::ChainLogger,
                steps::Int = 50)
     for _ = 1:steps
         Gen_Compose.is_finished(c) && break
         change_step!(c)
-        Gen_Compose.report_step!(log, c)
+        Gen_Compose.report_step!(logger, c)
         Gen_Compose.increment!(c)
     end
-    te = marginalize(ContinuousMarginal{Float64}(), buffer(log), :task_error)
-    pchange = marginalize(DiscreteMarginal{Bool}(), buffer(log), :change)
-    return (te, pchange)
+    m = ContinuousMarginal{Float64}(;
+                                    op = logsumexp,
+                                    norm = (x, n) -> x - log(n),
+                                    id = x -> -Inf)
+    marginalize(m, buffer(logger), :prob_change)
 end
 
 function test(c::AMHChain)

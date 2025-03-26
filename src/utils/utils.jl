@@ -139,7 +139,14 @@ function check_format(m::DiscreteMarginal{T}, bfr, key) where {T}
 end
 
 """Continuous values of n dimensions of type T"""
-struct ContinuousMarginal{T} <: MarginalType
+@with_kw struct ContinuousMarginal{T} <: MarginalType
+    op::Function = (+)
+    norm::Function = (x, n::Integer) -> x / n
+    id::Function = (A::Type) -> zero(A)
+end
+
+function ContinuousMarginal(::Type{T}) where {T<:AbstractArray}
+    ContinuousMarginal{T}(; id = (A::Type{T}) -> zero(eltype(A)))
 end
 
 function check_format(m::ContinuousMarginal{T}, bfr, key) where {T}
@@ -174,37 +181,40 @@ function marginalize(m::DiscreteMarginal{T}, bfr, key::Symbol) where {T}
     return acc
 end
 
-function marginalize(m::ContinuousMarginal{T}, bfr, key::Symbol) where {T}
+function marginalize(m::ContinuousMarginal{T}, bfr, key::Symbol) where {T<:AbstractArray}
     check_format(m, bfr, key)
     n = length(bfr)
+    #REVIEW: eltype instead of f64?
     marginal = similar(bfr[1][key], Float64)
-    fill!(marginal, 0)
+    fill!(marginal, m.id(T))
     for i = 1:n
         datum = bfr[i][key]
         for j = eachindex(marginal)
-            marginal[j] += datum[j]
+            marginal[j] = m.op(marginal[j], datum[j])
         end
     end
-    lmul!(1.0 / n, marginal)
+    @inbounds for j = eachindex(marginal)
+        marginal[j] = m.norm(marginal[j], n)
+    end
+    marginal
 end
 
 
 function marginalize(m::ContinuousMarginal{T}, bfr, key::Symbol) where {T<:Real}
     check_format(m, bfr, key)
     n = length(bfr)
-    marginal = zero(T)
+    marginal = m.id(T)
     for i = 1:n
-        marginal += bfr[i][key]
+        marginal = m.op(marginal, bfr[i][key])
     end
-    marginal *= 1.0 / n
-    return marginal
+    m.norm(marginal, n)
 end
 
 function marginalize(bfr, key::Symbol)
     n = length(bfr)
     @assert n > 0
     T = typeof(bfr[1][key])
-    marginalize(ContinuousMarginal{T}(), bfr, key)
+    marginalize(ContinuousMarginal(T), bfr, key)
 end
 
 function softmax(x::Array{<:Real}, t::Real = 1.0)

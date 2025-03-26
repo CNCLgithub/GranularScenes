@@ -1,6 +1,7 @@
 export AdaptiveMH,
     AMHChain,
-    extend_chain!
+    extend_chain!,
+    fork
 
 #################################################################################
 # Attention MCMC
@@ -80,7 +81,7 @@ function extend_chain!(chain::AMHChain, query::StaticQuery)
     @assert length(old_args) == length(new_args) "New query must match args"
     argdiffs = Tuple((x == y ? NoChange() : UnknownChange()
                       for (x,y) = zip(old_args, new_args)))
-    new_trace, _ = update(trace, new_args, argdiffs, query.observations)
+    new_trace, _... = update(trace, new_args, argdiffs, query.observations)
     chain.state = new_trace
     chain.query = query
     return nothing
@@ -153,8 +154,9 @@ function change_step!(chain::AMHChain)
     for j = 1:proc.rw_budget
         _t, alpha, _ =
             regenerate(trace,
-                       select(:changes => 1 => :change,
-                              :changes => 1 => :location))
+                       select(:changes => 1 => :location))
+                       # select(:changes => 1 => :change,
+                       #        :changes => 1 => :location))
         if log(rand()) < alpha # accept?
             trace = _t
         end
@@ -206,5 +208,14 @@ function viz_chain(chain::AMHChain)
     return nothing
 end
 
-# function display_selected_node(sidx, dims)
-#     bs = zeros(dims)
+function fork(c::AMHChain, l::MemLogger)
+    new_c = AMHChain(
+        c.query,
+        c.proc,
+        c.state,
+        c.auxillary,
+        c.step,
+        c.steps,
+    )
+    (new_c, deepcopy(l))
+end
