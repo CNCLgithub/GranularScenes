@@ -1,4 +1,4 @@
-export broadcasted_bernoulli, broadcasted_uniform, labelled_categorical
+export broadcasted_bernoulli, broadcasted_uniform, labelled_categorical, beta_mixture
 
 #################################################################################
 # Generic distributions
@@ -163,3 +163,58 @@ end
 is_discrete(::BroadcastedPiecewiseUniform) = false
 has_output_grad(::BroadcastedPiecewiseUniform) = true
 has_argument_grads(::BroadcastedPiecewiseUniform) = (true, true)
+
+
+#################################################################################
+# mixture of betas
+#################################################################################
+struct BetaMixture <: Distribution{Float64} end
+
+const beta_mixture = BetaMixture()
+
+function Gen.random(::BetaMixture, w::Float64, a1::Float64, b1::Float64, a2::Float64, b2::Float64)
+    a,b = bernoulli(w) ? (a1, b1) : (a2, b2)
+    beta(a, b)
+end
+
+function Gen.logpdf(::BetaMixture,
+                    x::Float64,
+                    w::Float64, a1::Float64, b1::Float64, a2::Float64, b2::Float64)
+    (x < 0 || x > 1) && return  -Inf
+    lw = log(w)
+    l1 = lw + logpdf(beta, x, a1, b1)
+    l2 = log1mexp(lw) + logpdf(beta, x, a2, b2)
+    logsumexp(l1, l2)
+end
+
+
+
+function logpdf_grad(::BetaMixture, x::Float64, w::Float64, a1::Float64, b1::Float64, a2::Float64, b2::Float64)
+    beta1_logpdf = logpdf(beta, x, a1, b1)
+    beta2_logpdf = logpdf(beta, x, a1, b2)
+    beta1_grad = logpdf_grad(beta, x, a1, b1)
+    beta2_grad = logpdf_grad(beta, x, a2, b2)
+    w1 = 1. / (1. + exp(log(1. - w) + beta2_logpdf - log(w) - beta1_logpdf))
+    w2 = 1. - w1
+    x_deriv = w1 * beta1_grad[1] + w2 * beta2_grad[1]
+    a1_deriv = w1 * beta1_grad[2]
+    b1_deriv = w1 * beta1_grad[3]
+    a2_deriv = w2 * beta2_grad[2]
+    b2_deriv = w2 * beta2_grad[3]
+    w_deriv = (exp(beta1_logpdf) - exp(beta2_logpdf)) / (w * exp(beta1_logpdf) + (1. - theta) * exp(beta2_logpdf))
+    (x_deriv, w_deriv, a1_deriv, b1_deriv, a2_deriv, b2_deriv)
+end
+
+function random(::BetaMixture, theta::Real, alpha::Real, beta::Real)
+    if bernoulli(theta)
+        random(Beta(), alpha, beta)
+    else
+        random(uniform_continuous, 0., 1.)
+    end
+end
+
+(::BetaMixture)(w, a1, b1, a2, b2) = Gen.random(BetaMixture(), w, a1, b1, a2, b2)
+
+is_discrete(::BetaMixture) = false
+has_output_grad(::BetaMixture) = true
+has_argument_grads(::BetaMixture) = (true, true, true, true, true)

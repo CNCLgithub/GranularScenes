@@ -1,7 +1,7 @@
 {
     "train_steps": 100,
-    "test_steps": 50,
-    "margin_size": 50,
+    "test_steps": 100,
+    "margin_size": 100,
     "kl_threshold": 100.0,
     "search_weight": 0.000001
 }

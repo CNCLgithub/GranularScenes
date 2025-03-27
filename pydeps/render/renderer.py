@@ -113,33 +113,6 @@ class Renderer:
         return voxel_index
 
     @ti.func
-    def voxel_surface_color(self, pos):
-        # REVIEW: relative position within voxel?
-        p = pos * self.voxel_inv_dx
-        p -= ti.floor(p)
-
-        boundary = self.voxel_edges
-        count = 0
-        for i in ti.static(range(3)):
-            if p[i] < boundary or p[i] > 1 - boundary:
-                count += 1
-
-        # REVIEW: only used for edge highlighting?
-        f = 0.0
-        if count >= 2:
-            f = 1.0
-
-        voxel_index = self._to_voxel_index(pos)
-        voxel_color = ti.Vector([0.0, 0.0, 0.0])
-        is_light = 0
-        if self.inside_particle_grid(voxel_index):
-            voxel_color = self.voxel_color[voxel_index] * (1.0 / 255)
-            if self.voxel_material[voxel_index] == 2:
-                is_light = 1
-
-        return voxel_color * (1.3 - 1.2 * f), is_light
-
-    @ti.func
     def ray_march(self, p, d):
         dist = inf
         if d[1] < -eps:
@@ -150,10 +123,6 @@ class Renderer:
     @ti.func
     def sdf_normal(self, p):
         return ti.Vector([0.0, 1.0, 0.0])  # up
-
-    @ti.func
-    def sdf_color(self, p):
-        return self.floor_color[None]
 
     @ti.func
     def dda_voxel(self, eye_pos, d):
@@ -287,8 +256,7 @@ class Renderer:
 
     @ti.kernel
     def render(self):
-        # u = 42
-        # v = 28
+        # REVIEW: set `block_dim`?
         ti.loop_config(block_dim=256)
         for u, v in self.depth_buffer:
             cdir = self.get_cast_dir(u, v)

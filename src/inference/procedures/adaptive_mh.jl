@@ -155,8 +155,8 @@ function change_step!(chain::AMHChain)
         _t, alpha, _ =
             regenerate(trace,
                        select(:changes => 1 => :location))
-                       # select(:changes => 1 => :change,
-                       #        :changes => 1 => :location))
+        # println("Before $(getindex(trace, :changes => 1 => :location))")
+        # println("After $(getindex(_t, :changes => 1 => :location))")
         if log(rand()) < alpha # accept?
             trace = _t
         end

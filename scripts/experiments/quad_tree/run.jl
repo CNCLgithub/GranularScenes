@@ -7,6 +7,7 @@ using ArgParse
 using DataFrames
 using Gen_Compose
 using GranularScenes
+using Gen: get_score
 import GranularScenes as GS
 
 function parse_commandline(c)
@@ -138,6 +139,8 @@ function run_scene(args)
 
     model = "$(attention)_$(granularity)"
 
+    # doors = [2]
+    # door_tiles = [252]
     doors = [2,1]
     door_tiles = [252, 244]
     ent_tiles = [9, 8]
@@ -254,7 +257,7 @@ end
 
 function main(c=ARGS)
     args = parse_commandline(c)
-    for scene = 6:6
+    for scene = 1:10
         args["scene"] = scene
         run_scene(args)
     end
