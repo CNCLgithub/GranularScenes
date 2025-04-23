@@ -6,8 +6,7 @@ export TaichiScene,
 
 struct TaichiScene
     voxscene::PyObject
-    voxel_buffer::PyObject # REVIEW: needed?
-    obstacle_map::Matrix{Float32}
+    obstacle_map::Array{Float32, 3}
 end
 
 """
@@ -25,9 +24,9 @@ function TaichiScene(template::GridRoom;
     @pycall vx.renderer.set_camera_pos(-0.015, -0.031, -2.477)::PyObject
     # @pycall vx.renderer.set_look_at(-0.3, -0.2, -0.016)::PyObject
     # @pycall vx.renderer.set_camera_pos(1.78, -0.03, -0.015)::PyObject
-    voxel_buffer = init_voxel_buffer!(vx, template)
-    obstacle_map = zeros(Float32, h, w)
-    TaichiScene(vx, voxel_buffer, obstacle_map)
+    init_voxel_buffer!(vx, template)
+    obstacle_map = zeros(Float32, h, w, 2)
+    TaichiScene(vx, obstacle_map)
 end
 
 
@@ -37,28 +36,31 @@ function init_voxel_buffer!(vx::PyObject,
     n = max(h, w)
     wall_map = Int32.(data(template) .== wall_tile)
     @pycall vx.set_exterior(wall_map)::PyObject
-    @pycall vx.set_lights(n)::PyObject
-    buffer = vx."voxel_buffer"
-    return buffer
+    return nothing
 end
 
-function write_obstacles!(m::Matrix{Float32}, mt::Matrix{Float64})
-    for i = eachindex(m)
-        m[i] = Float32(mt[i])
+function write_obstacles!(dst::Array{Float32, 3}, src::Matrix{Float64}, base_var=0f0)
+    a, b = size(src)
+    for i = 1:a, j = 1:b
+        dst[i, j, 1] = Float32(mt[i, j])
+        dst[i, j, 2] = base_var
     end
     return nothing
 end
 
-function write_obstacles!(m::Matrix{Float32}, gr::GridRoom)
-    for i = eachindex(m)
-        m[i] = data(gr)[i] == obstacle_tile
+function write_obstacles!(dst::Array{Float32, 3}, src::GridRoom, base_var=0f0)
+    a, b = Rooms.steps(src)
+    d = data(src)
+    for i = 1:a, j = 1:b
+        dst[i, j, 1] = d[i, j] == obstacle_tile
+        dst[i, j, 2] = base_var
     end
     return nothing
 end
 
-function write_obstacles!(m::Matrix{Float32}, qt::QuadTree)
-    fill!(m, 0.) # REVIEW: needed?
-    project_qt!(m, qt.leaves)
+function write_obstacles!(dst::Array{Float32, 3}, qt::QuadTree, base_var::Float32)
+    fill!(dst, 0.) # REVIEW: needed?
+    project_qt!(dst, leaves(qt), base_var)
     return nothing
 end
 
@@ -67,7 +69,7 @@ function render(scene::TaichiScene, obj)
     # clear voxels
     @pycall vx.reset_voxels()::PyObject
 
-    write_obstacles!(scene.obstacle_map, obj)
+    write_obstacles!(scene.obstacle_map, obj, 0.f0)
     @pycall vx.set_obstacles(scene.obstacle_map)::PyObject
 
     result = @pycall vx.render_scene()::PyObject
@@ -93,30 +95,31 @@ struct TaichiObserve <: Gen.Distribution{PyObject} end
 
 const observe_pixels = TaichiObserve()
 
-function Gen.random(::TaichiObserve, s::TaichiScene, obj, var::Float32)
+function Gen.random(::TaichiObserve, s::TaichiScene, obj, base_var::Float32)
     vx = s.voxscene
     # clear voxels
     @pycall vx.reset_voxels()::PyObject
-    write_obstacles!(s.obstacle_map, obj)
+    write_obstacles!(s.obstacle_map, obj, base_var)
     @pycall vx.set_obstacles(s.obstacle_map)::PyObject
-    result = @pycall vx.random(var)::PyObject
+    result = @pycall vx.random()::PyObject
     return result
 end
 
 function Gen.logpdf(::TaichiObserve, img::PyObject, s::TaichiScene,
-                    obj, var::Float32)
+                    obj, base_var::Float32)
     vx = s.voxscene
     # clear voxels
     @pycall vx.reset_voxels()::PyObject
-    write_obstacles!(s.obstacle_map, obj)
+    write_obstacles!(s.obstacle_map, obj, base_var)
     @pycall vx.set_obstacles(s.obstacle_map)::PyObject
     # py"print($img.shape)"
-    result = @pycall vx.logpdf(img, var)::Float64
+    result = @pycall vx.logpdf(img)::Float64
     return result
 end
 
-(::TaichiObserve)(s, obj, var) = Gen.random(observe_pixels, s, obj, var)
+(::TaichiObserve)(s, obj) = Gen.random(observe_pixels, s, obj)
 
 is_discrete(::TaichiObserve) = false
+# TODO: support grads?
 Gen.has_output_grad(::TaichiObserve) = false
 Gen.logpdf_grad(::TaichiObserve, value::Set, args...) = (nothing,)

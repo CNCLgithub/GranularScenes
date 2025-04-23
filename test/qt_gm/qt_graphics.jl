@@ -38,9 +38,9 @@ function test_rv()
                         window = false)
                         # window = true)
 
-    img = observe_pixels(scene, room1, 0.1f0)
+    img = observe_pixels(scene, room1)
     img = render(scene, room1)
-    ls = Gen.logpdf(observe_pixels, img, scene, room1, 0.1f0)
+    ls = Gen.logpdf(observe_pixels, img, scene, room1)
 
     println("logscore: $ls")
 

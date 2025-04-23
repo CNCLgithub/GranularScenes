@@ -68,7 +68,7 @@ function parse_commandline(c)
         "chain"
         help = "The number of chains to run"
         arg_type = Int
-        default = 5
+        default = 1
 
     end
 
@@ -257,7 +257,7 @@ end
 
 function main(c=ARGS)
     args = parse_commandline(c)
-    for scene = 1:10
+    for scene = 2:2
         args["scene"] = scene
         run_scene(args)
     end

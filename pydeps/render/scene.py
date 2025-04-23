@@ -149,29 +149,16 @@ class Scene:
              ti.round(idx[2])]).cast(ti.i32)
 
     @ti.func
-    def set_voxel(self, idx, mat, color, reset = False):
-        self.renderer.set_voxel(self.round_idx(idx), mat, color, reset)
+    def set_voxel(self, idx, info_, reset = False):
+        self.renderer.set_voxel(self.round_idx(idx), info_, reset)
+
+    # @ti.func
+    # def set_voxel_unsafe(self, idx, mat, color, reset = False):
+    #     self.renderer.set_voxel(idx, mat, color, reset)
 
     @ti.func
-    def set_voxel_unsafe(self, idx, mat, color, reset = False):
-        self.renderer.set_voxel(idx, mat, color, reset)
-
-    @ti.func
-    def get_voxel(self, idx):
-        mat, color = self.renderer.get_voxel(self.round_idx(idx))
-        return mat, color
-
-    @ti.func
-    def set_floor(self, height, color):
+    def set_floor(self, height):
         self.renderer.floor_height[None] = height
-        self.renderer.floor_color[None] = color
-
-    def set_directional_light(self, direction, direction_noise, color):
-        self.renderer.set_directional_light(direction, direction_noise, color)
-
-    def set_background_color(self, color):
-        self.renderer.background_color[None] = color
-
 
     @ti.kernel
     def set_exterior(self,
@@ -183,51 +170,50 @@ class Scene:
         height = 2 * n // 3 - hn
 
         # floor is fractional coord
-        self.set_floor(-0.5, (1.0, 1.0, 1.0))
+        self.set_floor(-0.5)
 
         for I in ti.grouped(walls):
             if walls[I]:
                 x = I[0] - hn
                 z = I[1] - hn
                 for y in range(-hn, height):
-                    self.set_voxel(vec3(x, y, z), 1, gray,
+                    self.set_voxel(vec3(x, y, z), [1, 0.],
                                    reset = True)
 
         # ceiling and floor
         for i in range(-hn, hn):
             for j in range(-hn, hn):
-                self.set_voxel(vec3(i, height, j), 1, vec3(1, 1, 1),
+                self.set_voxel(vec3(i, height, j), [1, 0],
                                reset = True)
-                # self.set_voxel(vec3(i, -hn, j), 1, vec3(1, 1, 1),
-                #                reset = True)
 
-    @ti.kernel
-    def set_lights(self, n:int):
-        hn = n // 2
-        height = 2 * n // 3 - hn
-        # add lights to the ceiling
-        for i in range(-n // 4, n // 4):
-            for j in range(-n // 4, n // 4):
-                pos = vec3(i, height, j)
-                self.set_voxel(pos, 2, vec3(1, 1, 1), reset = True)
+    # @ti.kernel
+    # def set_lights(self, n:int):
+    #     hn = n // 2
+    #     height = 2 * n // 3 - hn
+    #     # add lights to the ceiling
+    #     for i in range(-n // 4, n // 4):
+    #         for j in range(-n // 4, n // 4):
+    #             pos = vec3(i, height, j)
+    #             self.set_voxel(pos, 2, vec3(1, 1, 1), reset = True)
 
 
-    @ti.kernel
-    def set_obstacle(self,
-                     i: int,
-                     j: int,
-                     val : ti.f32):
-        blue = vec3(0.3, 0.3, 0.9)
-        nx,ny = self.rand_buffer.shape
-        n = max(nx, ny)
-        hn = n // 2
-        oheight = 1 * n // 6 - hn
-        x = i - hn
-        z = j - hn
-        for y in ti.ndrange((-hn, oheight)):
-            self.set_voxel(vec3(x, y, z),
-                           val,
-                           blue)
+    # TODO: Delete if not needed
+    # @ti.kernel
+    # def set_obstacle(self,
+    #                  i: int,
+    #                  j: int,
+    #                  val : ti.f32):
+    #     blue = vec3(0.3, 0.3, 0.9)
+    #     nx,ny = self.rand_buffer.shape
+    #     n = max(nx, ny)
+    #     hn = n // 2
+    #     oheight = 1 * n // 6 - hn
+    #     x = i - hn
+    #     z = j - hn
+    #     for y in ti.ndrange((-hn, oheight)):
+    #         self.set_voxel(vec3(x, y, z),
+    #                        val,
+    #                        blue)
 
     def set_obstacles(self, omap):
         self.renderer.rand_buffer.from_numpy(omap)
@@ -245,24 +231,24 @@ class Scene:
         return self.renderer.rand_buffer
 
 
-    def random(self, var: float):
+    def random(self):
         result = np.zeros((*self.renderer.image_res, 3),
                           dtype = np.float32)
         self.render_scene()
-        self.renderer.random(result, var)
+        self.renderer.random(result)
         return result
 
-    def logpdf(self, img, var):
+    def logpdf(self, img):
         self.render_scene()
-        return self.renderer.logpdf(img, var)
+        return self.renderer.logpdf(img)
 
 
     def save_img(self, img, dirpath = os.getcwd()):
-            timestamp = datetime.today().strftime('%Y-%m-%d-%H%M%S')
-            main_filename = os.path.split(__main__.__file__)[1]
-            fname = os.path.join(dirpath, f"{timestamp}.jpg")
-            ti.tools.image.imwrite(img, fname)
-            print(f"Screenshot has been saved to {fname}")
+        timestamp = datetime.today().strftime('%Y-%m-%d-%H%M%S')
+        main_filename = os.path.split(__main__.__file__)[1]
+        fname = os.path.join(dirpath, f"{timestamp}.jpg")
+        ti.tools.image.imwrite(img, fname)
+        print(f"Screenshot has been saved to {fname}")
 
 
     def render_scene(self):

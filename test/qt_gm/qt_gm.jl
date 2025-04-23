@@ -30,17 +30,18 @@ function mytest()
 
     params = QuadTreeModel(r;
                            render_kwargs =
-                               Dict(:resolution => (256,256)))
+                               Dict(:resolution => (128,128)))
     
     # call works at t=0
     (trace, ll) = generate(qt_model, (0, params,))
-    display(get_submap(get_choices(trace), :trackers))
-    display(get_submap(get_choices(trace), :changes))
+    # display(get_submap(get_choices(trace), :trackers))
+    # display(get_submap(get_choices(trace), :changes))
+    @show ll
     # call works at t=1
-    (trace, ll) = generate(qt_model, (1, params,))
-    display(get_submap(get_choices(trace), :trackers))
-    display(get_choices(trace)[:changes => 1 => :change])
-    display(get_submap(get_choices(trace), :changes => 1 => :location))
+    # (trace, ll) = generate(qt_model, (1, params,))
+    # display(get_submap(get_choices(trace), :trackers))
+    # display(get_choices(trace)[:changes => 1 => :change])
+    # display(get_submap(get_choices(trace), :changes => 1 => :location))
     return nothing
 end
 

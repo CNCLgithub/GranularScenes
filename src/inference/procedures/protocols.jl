@@ -138,7 +138,7 @@ function AuxState(p::AdaptiveComputation, trace::QTTrace)
         dpi[idx] = log(get(dpi, idx, 0.))
         q[idx] = dpi[idx]
     end
-    AdaptiveAux(dpi, ds, 0, 0, 1.0, q)
+    AdaptiveAux(dpi, ds, 0, 0, 5.0, q)
 end
 
 accepts(aux::AdaptiveAux) = aux.accepts

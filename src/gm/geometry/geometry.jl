@@ -413,6 +413,41 @@ function project_qt!(gs::Matrix{Float32},
     return nothing
 end
 
+function project_qt!(dst, qt::QuadTree)
+    project_qt!(dst, qt.leaves)
+end
+
+function project_qt!(dst::Array{Float32, 3},
+                     lv::Vector{QTAggNode},
+                     base_var::Float32 = 0.1f0)
+    a, b, c = size(dst)
+    @assert c == 2 "Destination format not supported"
+    cs = CartesianIndices((a, b))
+    # var_min = Inf
+    # var_max = 0.0
+    for x in lv
+        n = node(x)
+        idx = node_to_idx(n, a)
+        w = weight(x)
+        # var = base_var * exp2(2 * (1 - level(n)))
+        var = base_var # * (max_level(n) - level(n) + 1)
+        # @show var
+        # var_min = min(var, var_min)
+        # var_max = max(var, var_max)
+        w = w > 0.025 ? w : 0.0
+        # var = w > 0.025 ? var : 0.0
+        for i = idx
+            j, k = Tuple(cs[i])
+            dst[j, k, 1] = w
+            dst[j, k, 2] = var
+        end
+    end
+    # @show var_min
+    # @show var_max
+    return nothing
+end
+
+
 """
 Retrieves the leaf node with tree_idx == idx
 """

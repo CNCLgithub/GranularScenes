@@ -23,18 +23,16 @@ class Renderer:
         self.vignette_center = [0.5, 0.5]
         self.current_spp = 0
 
-        # self.color_buffer = ti.Vector.field(3, dtype=ti.f32)
-        self.depth_buffer = ti.field(dtype=ti.f32)
+        # holds mu, var
+        self.depth_buffer = ti.Vector.field(2, dtype=ti.f32)
         self.bbox = ti.Vector.field(3, dtype=ti.f32, shape=2)
         self.fov = ti.field(dtype=ti.f32, shape=())
-        self.voxel_color = ti.Vector.field(3, dtype=ti.u8)
-        self.voxel_material = ti.field(dtype=ti.f32)
-        self.voxel_color_reset = ti.Vector.field(3, dtype=ti.u8)
-        self.voxel_material_reset = ti.field(dtype=ti.f32)
+        self.voxel_material = ti.Vector.field(2, dtype=ti.f32)
+        self.voxel_material_reset = ti.Vector.field(2, dtype=ti.f32)
 
         self.light_direction = ti.Vector.field(3, dtype=ti.f32, shape=())
         self.light_direction_noise = ti.field(dtype=ti.f32, shape=())
-        self.light_color = ti.Vector.field(3, dtype=ti.f32, shape=())
+        # self.light_color = ti.Vector.field(3, dtype=ti.f32, shape=())
 
         self.cast_voxel_hit = ti.field(ti.i32, shape=())
         self.cast_voxel_index = ti.Vector.field(3, ti.i32, shape=())
@@ -47,9 +45,7 @@ class Renderer:
         self.up = ti.Vector.field(3, dtype=ti.f32, shape=())
 
         self.floor_height = ti.field(dtype=ti.f32, shape=())
-        self.floor_color = ti.Vector.field(3, dtype=ti.f32, shape=())
 
-        self.background_color = ti.Vector.field(3, dtype=ti.f32, shape=())
 
         self.voxel_grid_res = voxel_grid_res
         self.voxel_dx = 2 / voxel_grid_res
@@ -60,31 +56,18 @@ class Renderer:
         # ti.root.dense(ti.ij, image_res).place(self.color_buffer)
         ti.root.dense(ti.ij, image_res).place(self.depth_buffer)
         ti.root.dense(ti.ijk,
-                      self.voxel_grid_res).place(self.voxel_color,
-                                                 self.voxel_material,
-                                                 self.voxel_color_reset,
+                      self.voxel_grid_res).place(self.voxel_material,
                                                  self.voxel_material_reset,
                                                  offset=voxel_grid_offset)
 
         self._rendered_image = ti.Vector.field(3, float, image_res)
-        self.rand_buffer = ti.field(dtype=ti.f32)
+        self.rand_buffer = ti.Vector.field(2, dtype=ti.f32)
         ti.root.dense(ti.ij, voxel_grid_res // 2).place(self.rand_buffer)
 
         self.set_up(*up)
         self.set_fov(0.23)
 
         self.floor_height[None] = 0
-        self.floor_color[None] = (1, 1, 1)
-
-    def set_directional_light(self, direction, light_direction_noise,
-                              light_color):
-        direction_norm = (direction[0]**2 + direction[1]**2 +
-                          direction[2]**2)**0.5
-        self.light_direction[None] = (direction[0] / direction_norm,
-                                      direction[1] / direction_norm,
-                                      direction[2] / direction_norm)
-        self.light_direction_noise[None] = light_direction_noise
-        self.light_color[None] = light_color
 
     @ti.func
     def inside_grid(self, ipos):
@@ -92,18 +75,11 @@ class Renderer:
         ) < self.voxel_grid_res // 2
 
     @ti.func
-    def unsafe_query_density(self, ipos):
-        ret = self.voxel_material[ipos]
-        return ret
-
-    @ti.func
     def query_density(self, ipos):
         inside = self.inside_grid(ipos)
-        ret = 0.0
+        ret = ti.Vector([0., 0.])
         if inside:
             ret = self.voxel_material[ipos]
-        # else:
-        #     ret = 1.0
         return ret
 
     @ti.func
@@ -147,7 +123,8 @@ class Renderer:
 
         hit_pos = ti.Vector([0.0, 0.0, 0.0])
         hit_distance = inf
-        weight = 0.0
+        weight = ti.Vector([0., 0.], dt=ti.f32)
+        var = 0.0
 
         if inter:
             # near = near if near > 0 else far
@@ -164,12 +141,12 @@ class Renderer:
             running = 1
             while running:
 
-                # voxel weight
-                w = clamp(self.query_density(ipos), 0.0, 1.0)
+                # voxel weight and var
+                w = self.query_density(ipos)
 
                 # print(f'{step=} {ipos=}, {w=}')
 
-                if step > 0 and w > eps: # return distance of voxel surface
+                if step > 0 and w[0] > eps: # return distance of voxel surface
                     mini = (ipos - o + ti.Vector([0.5, 0.5, 0.5]) -
                             rsign * 0.5) * rinv
                     hit_distance = mini.max() * self.voxel_dx + near
@@ -216,7 +193,7 @@ class Renderer:
         if ray_march_dist < hit_distance:
             # if ray_march_dist < hit_distance:
             hit_distance = ray_march_dist
-            weight = 1.0 # don't go further
+            weight = ti.Vector([1.0, 0.0], dt=ti.f32) # don't go further
             normal = self.sdf_normal(pos + d * hit_distance)
 
 
@@ -263,80 +240,94 @@ class Renderer:
             pos = self.camera_pos[None]
             t = 0.0
 
+            # Constants to normalize final depth
+            dmin = 1.3
+            dmax = 2.3
+
             new_pos = ti.Vector([0.0, 0.0, 0.0]) + pos
             depth = 0.0
+            var = 0.0001
             acc_dist = 0.0
             mass = 1.0
             dist = 0.0 #-eps
             w = 0.0
+            sample = ti.Vector([0., 0.], dt=ti.f32)
             steps = 0
 
             # Tracing begin
             while steps < MAX_RAY_DEPTH and mass > eps and acc_dist < DIS_LIMIT:
                 # new_pos = pos + (acc_dist + 1e-3) * cdir
                 # print(f'{new_pos=}')
-                dist, w, new_pos = self.next_hit(new_pos, cdir)
+                dist, sample, new_pos = self.next_hit(new_pos, cdir)
+                w = sample[0]
                 acc_dist += dist
                 depth += mass * w * acc_dist
+                var += mass * w * sample[1]
                 # if w == 0.5:
                 #     print(f'{u=} {v=}')
                 # if u == 34 and v == 25:
-                # print(f'{steps=} {pos=} {new_pos=} {mass=} {dist=} {w=} {acc_dist=} {depth=} {cdir=}')
+                #     print(f'{steps=} {pos=} {new_pos=} {mass=} {dist=} {w=} {acc_dist=} {depth=} {cdir=}')
+                #     print(sample)
                 mass *= (1.0 - w)
                 steps += 1
 
             # top off with final hit
             depth += mass * acc_dist
 
+            depth = max(0.0, (depth - dmin) / dmax)
             # print(f'Final pos: {new_pos + dist * cdir}')
+            #
 
-            self.depth_buffer[u, v] = depth
+            self.depth_buffer[u, v] = ti.Vector([depth, var])
 
     @ti.kernel
     def set_obstacles(self):
-        blue = vec3(0.3, 0.3, 0.9)
         nx,ny = self.rand_buffer.shape
         n = max(nx, ny)
         hn = n // 2
         oheight = 1 * n // 6 - hn
 
         for i,j in self.rand_buffer:
-            if self.rand_buffer[i, j] > eps:
+            w = self.rand_buffer[i, j][0]
+            if w > eps:
                 x = i - hn
                 z = j - hn
                 for y in range(-hn, oheight):
                     self.set_voxel(round_idx(vec3(x, y, z)),
-                                   self.rand_buffer[i, j],
-                                   blue)
+                                   self.rand_buffer[i, j])
 
 
     @ti.kernel
     def random(self,
-               result: ti.types.ndarray(ndim = 3, dtype = ti.f32),
-               var: float):
-        for i,j in self._rendered_image:
+               result: ti.types.ndarray(ndim = 3, dtype = ti.f32)):
+        for i,j in self.depth_buffer:
+            info = self.depth_buffer[i, j]
+            mu = info[0]
+            var = info[1]
+            d = mu + ti.randn(ti.f32) * var
             for c in ti.static(range(3)):
-                result[i,j,c] = self._rendered_image[i,j][c] + ti.randn(ti.f32) * var
+                result[i,j,c] = d
 
 
     @ti.kernel
     def logpdf(self,
                img: ti.types.ndarray(ndim = 3, dtype=ti.f32),
-               var: float) -> float:
+               ) -> float:
         result = 0.
-        for u, v in self._rendered_image:
-            # for c in ti.static(range(3)):
-            z = (img[u, v, 0] - self._rendered_image[u, v][0]) / var
+        for u, v in self.depth_buffer:
+            mu, var = self.depth_buffer[u, v]
+            x = img[u, v, 0]
+            z = (x - mu) / var
             zsqr = z * z
             ls = -1 * (zsqr + ti.log(2*np.pi))/2 - ti.log(var)
+            # if u == 34 and v == 25:
+            #     print(f'{mu=} {var=} {x=} {ls=}')
             result += ls
         return result
 
     @ti.kernel
     def _render_to_image(self):
         ti.loop_config(block_dim=256)
-        dmin = 1.3
-        dmax = 2.3
         # for i, j in self.depth_buffer:
         #     v = self.depth_buffer[i, j]
         #     ti.atomic_min(dmin, v)
@@ -345,9 +336,9 @@ class Renderer:
         for i, j in self.depth_buffer:
             # v = 0.3 * ti.sqrt(self.depth_buffer[i, j])
             # v = 0.25 * self.depth_buffer[i, j]\
-            v = max(0.0, (self.depth_buffer[i, j] - dmin) / dmax)
+            d = self.depth_buffer[i, j][0]
             for c in ti.static(range(3)):
-                self._rendered_image[i, j][c] = v
+                self._rendered_image[i, j][c] = d
 
     @ti.kernel
     def recompute_bbox(self):
@@ -355,23 +346,20 @@ class Renderer:
             self.bbox[0][d] = 1e9
             self.bbox[1][d] = -1e9
         for I in ti.grouped(self.voxel_material):
-            if self.voxel_material[I] != 0:
+            w = self.voxel_material[I][0]
+            if w != 0:
                 for d in ti.static(range(3)):
                     ti.atomic_min(self.bbox[0][d], (I[d] - 1) * self.voxel_dx)
                     ti.atomic_max(self.bbox[1][d], (I[d] + 2) * self.voxel_dx)
 
     @ti.kernel
     def reset_voxels(self):
-        # self.voxel_material.fill(0.)
-        # self.voxel_color.fill(0)
         for I in ti.grouped(self.voxel_material):
             self.voxel_material[I] = self.voxel_material_reset[I]
-            self.voxel_color[I] = self.voxel_color_reset[I]
 
     def reset_framebuffer(self):
         self.current_spp = 0
-        # self.color_buffer.fill(0)
-        self.depth_buffer.fill(0)
+        self.depth_buffer.fill(ti.Vector([0., 0.]))
 
     def accumulate(self):
         self.render()
@@ -401,21 +389,8 @@ class Renderer:
         return r
 
     @ti.func
-    def set_voxel(self, idx, mat, color, reset = False):
-        self.voxel_material[idx] = ti.cast(mat, ti.f32)
-        self.voxel_color[idx] = self.to_vec3u(color)
+    def set_voxel(self, idx, mat, reset = False):
+        info = ti.Vector([mat[0], mat[1]], dt=ti.f32)
+        self.voxel_material[idx] = info
         if reset:
             self.voxel_material_reset[idx] = self.voxel_material[idx]
-            self.voxel_color_reset[idx] = self.voxel_color[idx]
-
-
-    @ti.func
-    def set_voxel_unsafe(self, idx, mat, color):
-        self.voxel_material[idx] = mat
-        self.voxel_color[idx] = color
-
-    @ti.func
-    def get_voxel(self, ijk):
-        mat = self.voxel_material[ijk]
-        color = self.voxel_color[ijk]
-        return mat, self.to_vec3(color)
