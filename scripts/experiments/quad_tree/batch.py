@@ -37,7 +37,7 @@ def main():
         'cpus-per-task' : '1',
         'mem-per-cpu' : '8GB',
         'time' : '{0:d}'.format(args.duration),
-        'partition' : 'psych_scavenge',
+        'partition' : 'gpu',
         'gres' : 'gpu:1',
         'requeue' : None,
         'job-name' : 'rooms',
