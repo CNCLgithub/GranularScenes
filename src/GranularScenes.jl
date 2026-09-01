@@ -3,16 +3,20 @@ module GranularScenes
 #################################################################################
 # Dependencies
 #################################################################################
-
 using Gen
 using Rooms
-
 using Graphs
 using PyCall
-using StaticArrays # REVIEW
 using Parameters
-using FunctionalCollections
+using StaticArrays
 using DocStringExtensions
+using FunctionalCollections
+
+
+# qualified
+using Statistics: mean
+using LinearAlgebra: norm
+using Base.Iterators: product
 
 #################################################################################
 # Runtime configuration

@@ -1,165 +1,96 @@
-using Base.Iterators: product
-using LinearAlgebra: norm
-
 export QTProdNode, QTAggNode, QuadTree
 
+include("spatial_primitives.jl")
 
 #################################################################################
 # Production
 #################################################################################
 
 """
-
-A production node in the quad tree.
-Defines a spatially oriented rectangle
+A production node in the quad tree. Defines a spatially oriented rectangle.
 
 # Properties
 
-- center: The XY center of the node
-- dims: The xy extents of the node
-- level: The number of splits with `level==1` denoting no splits
-- max_level: The maximum number of splits allowed
-- tree_idx: The Gen-trace index of the node in the production trace
+- `bounds`: Axis-aligned bounding box (continuous coordinates)
+- `level`: The number of splits with `level==1` denoting no splits
+- `max_level`: The maximum number of splits allowed
+- `tree_idx`: The Gen-trace index of the node in the production trace
 """
 struct QTProdNode
-    center::SVector{2, Float64}
-    dims::SVector{2, Float64}
+    bounds::AABB2D{Float64}
     level::Int64
     max_level::Int64
     tree_idx::Int64
 end
 
+QTProdNode(c::SVector{2, Float64}, d::SVector{2, Float64}, l, ml, ti) =
+    QTProdNode(AABB2D(c, d), l, ml, ti)
+
+center(n::QTProdNode) = center(n.bounds)
+dims(n::QTProdNode) = SVector{2, Float64}(n.bounds.xmax - n.bounds.xmin,
+                                          n.bounds.ymax - n.bounds.ymin)
+area(n::QTProdNode) = area(n.bounds)
+contains(n::QTProdNode, p::SVector{2, Float64}) = contains(n.bounds, p)
+contact(a::QTProdNode, b::QTProdNode) = touches(a.bounds, b.bounds)
+
+Base.length(n::QTProdNode) = n.bounds.xmax - n.bounds.xmin
+
 """
-    area(n)
+    max_leaves(n::QTProdNode)
 
-The area of the node.
-"""
-area(n::QTProdNode) = prod(n.dims)
-
-Base.length(n::QTProdNode) = n.dims[1]
-
-"""
-    max_leaves(n::QTProdNode)::Int
-
-The finest resolutions supported
+The finest resolutions supported.
 """
 max_leaves(n::QTProdNode) = 2^(n.max_level - 1)
-
-# helper constants
-const _slope =  SVector{2, Float64}([1., -1.])
-const _intercept =  SVector{2, Float64}([0.5, 0.5])
 
 """
     pos_to_idx(pos, n)
 
-Maps R^2 position of QTProdNode to a linear index in nxn
-
-# Arguments
-- pos: XY position
-- n  : The
+Maps R^2 position of QTProdNode to a linear index in nxn.
 """
 function pos_to_idx(pos::SVector{2, Float64}, n::Int64)
-    # cartesian coordinates
-    c = @. ceil(Int64, n * (pos * _slope + _intercept))
-    # linear index
-    ceil(Int64, n*(c[1] - 1) + c[2])
+    g = GridTransform(n)
+    c = pos_to_index(g, pos)
+    (c[1] - 1) * n + c[2]
 end
 
 """
+    node_to_idx(n::QTProdNode, d::Int64)
 
-Maps R^2 position of QTProdNode to a linear index in nxn
+Maps a node to the linear indices of its covered cells in a `d × d` grid.
 """
 function node_to_idx(n::QTProdNode, d::Int64)
-    @unpack center, level, max_level, dims = n
+    g = GridTransform(d)
+    @unpack level, max_level = n
     if level == max_level
-        # single index
-        idx = [pos_to_idx(center, d)]
-    else
-        # offset from each boundry
-        fac = (0.5 - (1.0 / exp2(max_level - level + 1)))
-        lower = center - fac * dims
-        upper = center + fac * dims
-        steps = Int64(exp2(max_level - level))
-        # xy ordering to match julia col-wise
-        # doesn't actually matter for square scenes
-        xs = LinRange(lower[1], upper[1], steps)
-        ys = LinRange(upper[2], lower[2], steps)
-        idx = Vector{Int64}(undef, steps^2)
-        for (i,(y,x)) in enumerate(product(ys, xs))
-            sv = SVector{2, Float64}([x, y])
-            idx[i] = pos_to_idx(sv, d)
-        end
+        return [pos_to_idx(center(n), d)]
+    end
+    # offset from each boundary
+    fac = 0.5 - (1.0 / exp2(max_level - level + 1))
+    lower = center(n) - fac .* dims(n)
+    upper = center(n) + fac .* dims(n)
+    steps = Int64(exp2(max_level - level))
+    # xy ordering to match julia col-wise
+    # doesn't actually matter for square scenes
+    xs = LinRange(lower[1], upper[1], steps)
+    ys = LinRange(upper[2], lower[2], steps)
+    idx = Vector{Int64}(undef, steps^2)
+    for (i, (y, x)) in enumerate(product(ys, xs))
+        idx[i] = pos_to_idx(SVector{2, Float64}([x, y]), d)
     end
     return idx
 end
 
-function contains(n::QTProdNode, p::SVector{2, Float64})
-    @unpack center, dims = n
-    lower = center - 0.5 * dims
-    upper = center + 0.5 * dims
-    all(lower .<= p) && all(p .<= upper)
-end
-
 """
+    idx_to_node_space(i, d)
 
-Maps a linear index in nxn to a R^2 plane [-0.5, 0.5]
-
-# Arguments
-- i: linear index
-- d: number of columns
+Maps a linear index in `d × d` to the R^2 plane `[-0.5, 0.5]`.
 """
 function idx_to_node_space(i::Int64, d::Int64)
-    c = [i / d, ((i - 1) % d) + 1.0]
-    c .*= 1.0/d
-    c .+= -_intercept
-    c .*= _slope
-    SVector{2, Float64}(c)
+    g = GridTransform(d)
+    index_to_pos(g, i)
 end
 
-function dist(x::QTProdNode, y::QTProdNode)
-    norm(x.center - y.center)
-end
-
-"""
-    contact(a, b)
-
-True if a wall of each node are touching.
-> Note: Both nodes can be of different area (granularity)
-"""
-# function contact(a::QTProdNode, b::QTProdNode)
-#     d = dist(a,b) - (0.5*a.dims[1]) - (0.5*b.dims[1])
-#     contact(a, b, d)
-# end
-# function contact(a::QTProdNode, b::QTProdNode, d::Float64)
-#     aa = area(a)
-#     ab = area(b)
-#     # if same size, then contact is simply distance
-#     aa == ab && return isapprox(d, 0.)
-#     # otherwise must account for diagonal
-#     big, small = aa > ab ? (a, b) : (b, a)
-#     dlevel = small.level - big.level
-#     thresh = 0.5 * big.dims[1] * (1 - exp2(-(dlevel + 1)))
-#     d < thresh
-# end
-
-function contact(a::QTProdNode, b::QTProdNode)
-    d1 = b.center[1] + 0.5 * b.dims[1] - (a.center[1] - 0.5 * a.dims[1])
-    d2 = a.center[1] + 0.5 * a.dims[1] - (b.center[1] - 0.5 * b.dims[1])
-
-    d3 = b.center[2] + 0.5 * b.dims[2] - (a.center[2] - 0.5 * a.dims[2])
-    d4 = a.center[2] + 0.5 * a.dims[2] - (b.center[2] - 0.5 * b.dims[2])
-
-    # diagonal
-    (d1 == 0 || d2 == 0) && (d3 == 0 || d4 == 0) && return false
-    # all other cases
-    (d1 >= 0 && d2 >= 0 && d3 >= 0 && d4 >= 0)
-    # # check if any of the walls touch
-    # a.center[1] - 0.5* a.dims[1] <= b.center[1] + 0.5*b.dims[1] &&
-    #     a.center[1] + 0.5 * a.dims[1] >= b.center[1] - 0.5 * b.dims[1] &&
-    #     a.center[2] - 0.5 * a.dims[2] <= b.center[2] + 0.5 * b.dims[2] &&
-    #     a.center[2] + 0.5 * a.dims[2] >= b.center[2] - 0.5 * b.dims[2]
-end
-
+dist(x::QTProdNode, y::QTProdNode) = norm(center(x) - center(y))
 
 # REVIEW: Some way to parameterize weights?
 function produce_weight(n::QTProdNode)::Float64
@@ -169,7 +100,7 @@ function produce_weight(n::QTProdNode)::Float64
         (level == max_level ? 0. : 0.5)
 end
 
-const sqrt_v = SVector{2, Float64}(fill(sqrt(2), 2))
+# quadrant offset constants (relative to parent center, scaled by 0.25*dims)
 const q1 = SVector{2, Float64}([-1.0,  1.0])
 const q2 = SVector{2, Float64}([-1.0, -1.0])
 const q3 = SVector{2, Float64}([ 1.0,  1.0])
@@ -179,29 +110,21 @@ const q4 = SVector{2, Float64}([ 1.0, -1.0])
 Splits the node into 4 children, centered in 4 quadrants
 with respect to the center of the parent.
 """
-function produce_qt(n::QTProdNode)::Vector{QTProdNode}
-    @unpack center, dims, level, max_level = n
-    # calculate new centers
-    dc = 0.25 .* dims # .* sqrt_v
-    # offset by 1/2 the diagonal
-    c11 = center + (q1 .* dc) # top left
-    c21 = center + (q2 .* dc) # bottom left
-    c12 = center + (q3 .* dc) # top right
-    c22 = center + (q4 .* dc) # bottom right
-    # half xy dimensions (1/4 area)
-    new_dims = 0.5 * dims
-    children = Vector{QTProdNode}(undef, 4)
-    children[1] = QTProdNode(c11, new_dims, level + 1, max_level,
-                         Gen.get_child(n.tree_idx, 1, 4))
-    children[2] = QTProdNode(c12, new_dims, level + 1, max_level,
-                         Gen.get_child(n.tree_idx, 2, 4))
-    children[3] = QTProdNode(c21, new_dims, level + 1, max_level,
-                         Gen.get_child(n.tree_idx, 3, 4))
-    children[4] = QTProdNode(c22, new_dims, level + 1, max_level,
-                         Gen.get_child(n.tree_idx, 4, 4))
-    # REVIEW: Way to used static vector?
-    # SVector{4, QTProdNode}(children)
-    children
+function produce_qt(n::QTProdNode)::SVector{4, QTProdNode}
+    @unpack center, level, max_level = n
+    dc = 0.25 .* dims(n)  # offset by 1/4 of dims
+    new_dims = 0.5 .* dims(n)
+    offs = (q1 .* dc, q2 .* dc, q3 .* dc, q4 .* dc)
+    SVector{4, QTProdNode}((
+        QTProdNode(center + offs[1], new_dims, level + 1, max_level,
+                   Gen.get_child(n.tree_idx, 1, 4)),
+        QTProdNode(center + offs[2], new_dims, level + 1, max_level,
+                   Gen.get_child(n.tree_idx, 2, 4)),
+        QTProdNode(center + offs[3], new_dims, level + 1, max_level,
+                   Gen.get_child(n.tree_idx, 3, 4)),
+        QTProdNode(center + offs[4], new_dims, level + 1, max_level,
+                   Gen.get_child(n.tree_idx, 4, 4)),
+    ))
 end
 
 
@@ -224,11 +147,8 @@ leaves(st::QTAggNode) = st.leaves
 node(st::QTAggNode) = st.node
 Base.length(st::QTAggNode) = st.k
 
-
 """
-
-Aggregates quad tree production nodes into a tree, keeping track of
-DOF.
+Aggregates quad tree production nodes into a tree, keeping track of DOF.
 """
 function QTAggNode(n::QTProdNode, y::Float64, children::Vector{QTAggNode})
     if isempty(children)
@@ -261,7 +181,6 @@ function leaf_vec(s::QTAggNode)::Vector{QTAggNode}
     return v
 end
 
-
 function add_leaves!(v::Vector{QTAggNode}, s::QTAggNode)
     heads::Vector{QTAggNode} = [s]
     i::Int64 = 1
@@ -277,7 +196,6 @@ function add_leaves!(v::Vector{QTAggNode}, s::QTAggNode)
     return nothing
 end
 
-
 function leaf_mapping(lv::Vector{QTAggNode})::Dict{Int64, Int64}
     mapping = Dict{Int64, Int64}()
     for i = 1:length(lv)
@@ -288,11 +206,9 @@ function leaf_mapping(lv::Vector{QTAggNode})::Dict{Int64, Int64}
 end
 
 
-
 #################################################################################
 # Tree and traversal
 #################################################################################
-
 
 struct QuadTree
     root::QTAggNode
@@ -325,11 +241,10 @@ function get_depth(n::Int64)
     d
 end
 
-
 """
     traverse_qt(root, dest)
 
-Returns the quad tree node at index `dest`.
+Returns the quad tree node at index `dest` (Gen `Recurse` indexing).
 """
 function traverse_qt(root::QTAggNode, dest::Int64)
     # No children or root is destination
@@ -337,13 +252,10 @@ function traverse_qt(root::QTAggNode, dest::Int64)
     d = get_depth(dest) - 1
     path = Vector{Int64}(undef, d)
     idx = dest
-    # REVIEW: More direct mapping of dest -> Node?
-    # build path to root from dest
     @inbounds for i = 1:d
         path[d - i + 1] = Gen.get_child_num(idx, 4)
         idx = Gen.get_parent(idx, 4)
     end
-    # traverse qt using `path`
     for i = 1:d
         # in the context of split-merge,
         # for the backward of a merge, t_prime will not
@@ -353,7 +265,6 @@ function traverse_qt(root::QTAggNode, dest::Int64)
     end
     root
 end
-
 
 """
     traverse_qt(root, dest)
