@@ -72,8 +72,7 @@ printf "(\xE2\x9C\x94) Binding project paths\n"
 echo "( ) Executing ${COMMAND}"
 printf "=%.0s"  $(seq 1 63)
 printf "\n"
-$SING $BS $CONT bash -c "source /project/${SENV[pyenv]}/bin/activate \
-    cd /project && \
+$SING $BS $CONT bash -c "cd /project && \
     exec $COMMAND && \
     cd - && \
     deactivate"

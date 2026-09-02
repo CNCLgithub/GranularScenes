@@ -1,0 +1,3 @@
+[submodule "julia_deps/Rooms"]
+	path = julia_deps/Rooms
+	url = git@github.com:CNCLgithub/Rooms.git
