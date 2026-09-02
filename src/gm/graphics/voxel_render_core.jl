@@ -81,49 +81,37 @@ end
 #       dir = normalize(forward + fu·right + fv·up_dir)
 # ---------------------------------------------------------------------------
 
-# camera basis from eye/look_at/up → (forward, right, up_dir)
-function camera_basis(eye::NTuple{3,Float32},
-                      target::NTuple{3,Float32},
-                      up::NTuple{3,Float32})
-    fwd = (target[1] - eye[1], target[2] - eye[2], target[3] - eye[3])
-    fn = sqrt(fwd[1]^2 + fwd[2]^2 + fwd[3]^2)
-    if fn == 0.0f0
-        error("eye == target: undefined view direction")
+@inline function camera_basis(eye::Tuple{Float32,Float32,Float32},
+                              target::Tuple{Float32,Float32,Float32},
+                              up::Tuple{Float32,Float32,Float32})
+    fwd = normalize3((target[1] - eye[1], target[2] - eye[2], target[3] - eye[3]))
+    if abs(dot3(fwd, up)) > 0.999f0
+        error("camera_basis: forward and up are collinear")
     end
-    fwd = (fwd[1] / fn, fwd[2] / fn, fwd[3] / fn)
-    # right = normalize(forward × up)
-    rx  = fwd[2]*up[3] - fwd[3]*up[2]
-    ry  = fwd[3]*up[1] - fwd[1]*up[3]
-    rz  = fwd[1]*up[2] - fwd[2]*up[1]
-    rn  = sqrt(rx^2 + ry^2 + rz^2)
-    if rn == 0.0f0
-        error("forward parallel to up: degenerate camera")
-    end
-    right = (rx/rn, ry/rn, rz/rn)
-    # up_dir = right × forward
-    ux  = right[2]*fwd[3] - right[3]*fwd[2]
-    uy  = right[3]*fwd[1] - right[1]*fwd[3]
-    uz  = right[1]*fwd[2] - right[2]*fwd[1]
-    un  = sqrt(ux^2 + uy^2 + uz^2)
-    up_dir = (ux/un, uy/un, uz/un)
-    (fwd, right, up_dir)
+    # Right-handed basis: forward is view direction, right points to camera right (+X in cam space)
+    # When up=(0,1,0) and forward=(0,0,1), right = cross(up, forward) = (1, 0, 0)
+    right = normalize3(cross3(up, fwd))
+    up_dir = normalize3(cross3(fwd, right))
+    return fwd, right, up_dir
 end
 
-# per-pixel ray direction from a precomputed basis
-function ray_direction(forward::NTuple{3,Float32},
-                       right::NTuple{3,Float32},
-                       up_dir::NTuple{3,Float32},
-                       fov::Float32,
-                       aspect::Float32,
-                       u::Int, v::Int,
-                       image_h::Int)
-    fu = 2 * fov * u / image_h - fov * aspect - 1.0f-5
-    fv = 2 * fov * v / image_h - fov - 1.0f-5
-    dx = forward[1] + fu*right[1] + fv*up_dir[1]
-    dy = forward[2] + fu*right[2] + fv*up_dir[2]
-    dz = forward[3] + fu*right[3] + fv*up_dir[3]
-    dn = sqrt(dx^2 + dy^2 + dz^2)
-    (dx/dn, dy/dn, dz/dn)
+@inline function ray_direction(fwd::Tuple{Float32,Float32,Float32},
+                               right::Tuple{Float32,Float32,Float32},
+                               up_dir::Tuple{Float32,Float32,Float32},
+                               fov::Float32,
+                               aspect::Float32,
+                               u::Int,
+                               v::Int,
+                               image_h::Int)
+    # u: 1 (left) -> W (right)
+    # v: 1 (top)  -> H (bottom)
+    fu = (2.0f0 * fov * Float32(u) / Float32(image_h)) - (fov * aspect)
+    fv = (fov) - (2.0f0 * fov * Float32(v) / Float32(image_h)) # top is +up, bottom is -up
+
+    d = (fwd[1] + fu * right[1] + fv * up_dir[1],
+         fwd[2] + fu * right[2] + fv * up_dir[2],
+         fwd[3] + fu * right[3] + fv * up_dir[3])
+    return normalize3(d)
 end
 
 # ---------------------------------------------------------------------------

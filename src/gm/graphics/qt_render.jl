@@ -120,15 +120,15 @@ function QuadTreeRenderer(;grid_res::Int = 128,
     fill!(bbox, 0.0f0)
     fill!(rand_buffer, 0.0f0)
 
-    camera_pos = SVector{3,Float32}(0.0f0, 0.0f0, 0.0f0)
-    look_at = SVector{3,Float32}(0.0f0, 0.0f0, -1.0f0)
+    camera_pos = SVector{3,Float32}(0.4f0, 0.5f0, 2.0f0)
+    look_at = SVector{3,Float32}(0.0f0, 0.0f0, 0.0f0)
     upv = SVector{3,Float32}(up[1], up[2], up[3])
     fov = Float32(0.23)
     floor_height = 0.0f0
     light_direction = SVector{3,Float32}(0.0f0, 1.0f0, 0.0f0)
     light_direction_noise = 0.0f0
 
-    QuadTreeRenderer(grid_res, image_res, 2.0f0 / grid_res, grid_res / 2.0f0, exposure, voxel_edges,
+    QuadTreeRenderer(grid_res, image_res, 1.0f0, 1.0f0, exposure, voxel_edges,
                      grid_material, grid_material_reset,
                      depth_buffer, rendered, noise_buffer, bbox, rand_buffer,
                      leaf_inds, leaf_weights, max_cells,
@@ -425,8 +425,9 @@ function recompute_bbox!(r::QuadTreeRenderer)
         half = Float32(d) * dx / 2
         minx = miny = -half; maxx = maxy = half
     end
-    minz = -1.0f0
-    maxz = Float32(d) * dx + 1.0f0
+    halfz = Float32(d) * dx / 2     # centered grid → world z ∈ [-d/2, d/2]
+    minz = -halfz
+    maxz = halfz
     r.bbox[1] = minx; r.bbox[2] = miny; r.bbox[3] = minz
     r.bbox[4] = maxx; r.bbox[5] = maxy; r.bbox[6] = maxz
     nothing
