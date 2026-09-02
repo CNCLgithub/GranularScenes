@@ -224,23 +224,29 @@ function set_obstacles!(r::QuadTreeRenderer, omap::AbstractMatrix)
     # ensure rand_buffer receives the map
     copyto!(r.rand_buffer, reshape(omap, size(r.rand_buffer,1), size(r.rand_buffer,2)))
     _set_obstacles_kernel!(r.grid_material, r.rand_buffer, r.obstacle_height)
-    # keep the bbox fresh: obstacle columns occupy the omap's occupied cells,
-    # rising obstacle_height from the floor (world y = -d/2).
-    d = grid_res(r); dx = r.voxel_dx
-    hn = -Float32(d) * dx / 2
-    occ = findall(>(EPS), omap)
-    if isempty(occ)
-        half = Float32(d) * dx / 2
-        r.bbox[1] = r.bbox[2] = -half; r.bbox[3] = hn
-        r.bbox[4] = r.bbox[5] = half; r.bbox[6] = hn + Float32(r.obstacle_height) * dx
-        return nothing
-    end
-    xs = Float32[ (i - 1 - d÷2) * dx for (i, _) in occ ]
-    zs = Float32[ (j - 1 - d÷2) * dx for (_, j) in occ ]
-    r.bbox[1] = minimum(xs); r.bbox[2] = minimum(zs)
-    r.bbox[3] = hn
-    r.bbox[4] = maximum(xs) + dx; r.bbox[5] = maximum(zs) + dx
-    r.bbox[6] = hn + Float32(r.obstacle_height) * dx
+
+    d = grid_res(r)
+    half = Float32(d) * r.voxel_dx / 2.0f0
+    @show half
+    r.bbox[1] = -half; r.bbox[2] = -half; r.bbox[3] = -half
+    r.bbox[4] =  half; r.bbox[5] =  half; r.bbox[6] =  half
+    # # keep the bbox fresh: obstacle columns occupy the omap's occupied cells,
+    # # rising obstacle_height from the floor (world y = -d/2).
+    # d = grid_res(r); dx = r.voxel_dx
+    # hn = -Float32(d) * dx / 2
+    # occ = findall(>(EPS), omap)
+    # if isempty(occ)
+    #     half = Float32(d) * dx / 2
+    #     r.bbox[1] = r.bbox[2] = -half; r.bbox[3] = hn
+    #     r.bbox[4] = r.bbox[5] = half; r.bbox[6] = hn + Float32(r.obstacle_height) * dx
+    #     return nothing
+    # end
+    # xs = Float32[ (i - 1 - d÷2) * dx for (i, _) in occ ]
+    # zs = Float32[ (j - 1 - d÷2) * dx for (_, j) in occ ]
+    # r.bbox[1] = minimum(xs); r.bbox[2] = minimum(zs)
+    # r.bbox[3] = hn
+    # r.bbox[4] = maximum(xs) + dx; r.bbox[5] = maximum(zs) + dx
+    # r.bbox[6] = hn + Float32(r.obstacle_height) * dx
     nothing
 end
 
@@ -440,35 +446,40 @@ function recompute_bbox!(r::QuadTreeRenderer)
     n = r.pack_n
     d = grid_res(r)
     dx = r.voxel_dx
-    minx = Float32(1e9); maxx = Float32(-1e9)
-    miny = Float32(1e9); maxy = Float32(-1e9)
-    minz = Float32(1e9); maxz = Float32(-1e9)
-    @inbounds for i in 1:n
-        w = r.pack_wts[i]
-        w == 0.0f0 && continue
-        li = r.pack_inds[i]
-        col = (li - 1) % d + 1
-        row = (li - 1) ÷ d + 1
-        # same quadtree→renderer-world mapping as _project_qt_to_grid!
-        x = clamp(round(Int, ((col - 0.5) / d - 0.5) * d) + d ÷ 2 + 1, 1, d)
-        y = clamp(round(Int, ((row - 0.5) / d - 0.5) * d) + d ÷ 2 + 1, 1, d)
-        x = (x - 1 - d÷2) * dx
-        y = (y - 1 - d÷2) * dx
-        # vertical column: the cell spans y in [0, obstacle_height] (floor to
-        # obstacle top); world z-extent comes from obstacle_height below.
-        minx = min(minx, x); maxx = max(maxx, x + dx)
-        miny = min(miny, y); maxy = max(maxy, y + dx)
-    end
-    if minx > maxx   # no leaves → default box around origin
-        half = Float32(d) * dx / 2
-        minx = miny = -half; maxx = maxy = half
-    end
-    # vertical extent: floor at gy=1 (world y = -d/2) rising obstacle_height cells
-    y_floor = -(Float32(d) * dx / 2)
-    minz = y_floor
-    maxz = y_floor + Float32(r.obstacle_height) * dx   # top of the obstacles
-    r.bbox[1] = minx; r.bbox[2] = miny; r.bbox[3] = minz
-    r.bbox[4] = maxx; r.bbox[5] = maxy; r.bbox[6] = maxz
+
+    half = Float32(d) * dx / 2.0f0
+    r.bbox[1] = -half; r.bbox[2] = -half; r.bbox[3] = -half
+    r.bbox[4] =  half; r.bbox[5] =  half; r.bbox[6] =  half
+
+    # minx = Float32(1e9); maxx = Float32(-1e9)
+    # miny = Float32(1e9); maxy = Float32(-1e9)
+    # minz = Float32(1e9); maxz = Float32(-1e9)
+    # @inbounds for i in 1:n
+    #     w = r.pack_wts[i]
+    #     w == 0.0f0 && continue
+    #     li = r.pack_inds[i]
+    #     col = (li - 1) % d + 1
+    #     row = (li - 1) ÷ d + 1
+    #     # same quadtree→renderer-world mapping as _project_qt_to_grid!
+    #     x = clamp(round(Int, ((col - 0.5) / d - 0.5) * d) + d ÷ 2 + 1, 1, d)
+    #     y = clamp(round(Int, ((row - 0.5) / d - 0.5) * d) + d ÷ 2 + 1, 1, d)
+    #     x = (x - 1 - d÷2) * dx
+    #     y = (y - 1 - d÷2) * dx
+    #     # vertical column: the cell spans y in [0, obstacle_height] (floor to
+    #     # obstacle top); world z-extent comes from obstacle_height below.
+    #     minx = min(minx, x); maxx = max(maxx, x + dx)
+    #     miny = min(miny, y); maxy = max(maxy, y + dx)
+    # end
+    # if minx > maxx   # no leaves → default box around origin
+    #     half = Float32(d) * dx / 2
+    #     minx = miny = -half; maxx = maxy = half
+    # end
+    # # vertical extent: floor at gy=1 (world y = -d/2) rising obstacle_height cells
+    # y_floor = -(Float32(d) * dx / 2)
+    # minz = y_floor
+    # maxz = y_floor + Float32(r.obstacle_height) * dx   # top of the obstacles
+    # r.bbox[1] = minx; r.bbox[2] = miny; r.bbox[3] = minz
+    # r.bbox[4] = maxx; r.bbox[5] = maxy; r.bbox[6] = maxz
     nothing
 end
 

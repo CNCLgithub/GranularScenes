@@ -156,6 +156,7 @@ function test_render_cross(cam_height, cam_pitch, cam_fov, obs_height_ratio)
     half = Float32(d) * r_test.voxel_dx / 2.0f0
     r_test.bbox[1] = -half; r_test.bbox[2] = -half; r_test.bbox[3] = -half
     r_test.bbox[4] =  half; r_test.bbox[5] =  half; r_test.bbox[6] =  half
+    @show r_test.bbox
 
     # 4. Camera Geometry (Standing at near wall, looking forward +Z, pitched down)
     floor_world_y = Float32(floor_y - mid)
@@ -349,7 +350,11 @@ function mytest()
                          :look_at   => SVector{3,Float32}(target_x, target_y, target_z),
                          :fov => Float32(cam_fov)))
 
+
+
     @time (trace, ll) = generate(qt_model, (params,))
+
+    @show params.renderer.bbox
 
     depth_map_array(trace[:depth])
 end
