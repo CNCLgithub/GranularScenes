@@ -314,15 +314,16 @@ function _project_qt_to_grid_kernel!(grid,
         li = leaf_inds[i]
         w = leaf_weights[i]
         w == 0.0f0 && return nothing
-        col = ((li - 1) % d) + 1
-        row = (li - 1) ÷ d + 1
-        # quadtree cell (col,row) ∈ [1,d]² lives in its own compact space
-        # [-0.5, 0.5]² (size 1/d). Map it to the renderer world grid, which
-        # spans [-d/2, d/2] per axis (grid index = world, voxel_dx=1):
-        qx = (col - 0.5) / d - 0.5          # quadtree x ∈ [-0.5, 0.5]
-        qz = (row - 0.5) / d - 0.5
-        gx = clamp(round(Int, qx * d) + d ÷ 2 + 1, 1, d)
-        gz = clamp(round(Int, qz * d) + d ÷ 2 + 1, 1, d)
+        # pos_to_idx packs li = (c1-1)*n + c2 with c1 = X/col, c2 = Y/row.
+        # RECOVER the original components BEFORE unpacking:
+        row = ((li - 1) % d) + 1          # original component 2 (Y / row)
+        col = (li - 1) ÷ d + 1            # original component 1 (X / col)
+        # Identity mapping: the quadtree's d×d occupancy grid and the
+        # renderer's d×d grid share the same cell indexing — leaf cell
+        # (col,row) IS grid cell (col,row). No re-projection (the old
+        # round-based remap produced alternating empty cells = "spikes").
+        gx = col
+        gz = row
         # vertical column: rise obstacle_height cells from the floor (bottom rows)
         for gy in 1:obstacle_height
             grid[gx, gy, gz] = w
@@ -344,12 +345,10 @@ function _project_qt_to_grid!(grid,
         li = leaf_inds[i]
         w = leaf_weights[i]
         w == 0.0f0 && continue
-        col = ((li - 1) % d) + 1
-        row = (li - 1) ÷ d + 1
-        qx = (col - 0.5) / d - 0.5          # quadtree x ∈ [-0.5, 0.5]
-        qz = (row - 0.5) / d - 0.5
-        gx = clamp(round(Int, qx * d) + d ÷ 2 + 1, 1, d)
-        gz = clamp(round(Int, qz * d) + d ÷ 2 + 1, 1, d)
+        row = ((li - 1) % d) + 1          # original component 2 (Y / row)
+        col = (li - 1) ÷ d + 1            # original component 1 (X / col)
+        gx = col                          # identity mapping
+        gz = row
         # vertical column: fill obstacle_height cells from the floor
         for gy in 1:obstacle_height
             grid[gx, gy, gz] = w
