@@ -224,6 +224,23 @@ function set_obstacles!(r::QuadTreeRenderer, omap::AbstractMatrix)
     # ensure rand_buffer receives the map
     copyto!(r.rand_buffer, reshape(omap, size(r.rand_buffer,1), size(r.rand_buffer,2)))
     _set_obstacles_kernel!(r.grid_material, r.rand_buffer, r.obstacle_height)
+    # keep the bbox fresh: obstacle columns occupy the omap's occupied cells,
+    # rising obstacle_height from the floor (world y = -d/2).
+    d = grid_res(r); dx = r.voxel_dx
+    hn = -Float32(d) * dx / 2
+    occ = findall(>(EPS), omap)
+    if isempty(occ)
+        half = Float32(d) * dx / 2
+        r.bbox[1] = r.bbox[2] = -half; r.bbox[3] = hn
+        r.bbox[4] = r.bbox[5] = half; r.bbox[6] = hn + Float32(r.obstacle_height) * dx
+        return nothing
+    end
+    xs = Float32[ (i - 1 - d÷2) * dx for (i, _) in occ ]
+    zs = Float32[ (j - 1 - d÷2) * dx for (_, j) in occ ]
+    r.bbox[1] = minimum(xs); r.bbox[2] = minimum(zs)
+    r.bbox[3] = hn
+    r.bbox[4] = maximum(xs) + dx; r.bbox[5] = maximum(zs) + dx
+    r.bbox[6] = hn + Float32(r.obstacle_height) * dx
     nothing
 end
 
@@ -423,8 +440,8 @@ function recompute_bbox!(r::QuadTreeRenderer)
         row = (li - 1) ÷ d + 1
         x = (col - 1 - d÷2) * dx
         y = (row - 1 - d÷2) * dx
-        # vertical column: the cell spans all y in [0, d·dx] (floor-to-ceiling);
-        # world z-extent is the full grid height.
+        # vertical column: the cell spans y in [0, obstacle_height] (floor to
+        # obstacle top); world z-extent comes from obstacle_height below.
         minx = min(minx, x); maxx = max(maxx, x + dx)
         miny = min(miny, y); maxy = max(maxy, y + dx)
     end
@@ -432,9 +449,10 @@ function recompute_bbox!(r::QuadTreeRenderer)
         half = Float32(d) * dx / 2
         minx = miny = -half; maxx = maxy = half
     end
-    halfz = Float32(d) * dx / 2     # centered grid → world z ∈ [-d/2, d/2]
-    minz = -halfz
-    maxz = halfz
+    # vertical extent: floor at gy=1 (world y = -d/2) rising obstacle_height cells
+    y_floor = -(Float32(d) * dx / 2)
+    minz = y_floor
+    maxz = y_floor + Float32(r.obstacle_height) * dx   # top of the obstacles
     r.bbox[1] = minx; r.bbox[2] = miny; r.bbox[3] = minz
     r.bbox[4] = maxx; r.bbox[5] = maxy; r.bbox[6] = maxz
     nothing
