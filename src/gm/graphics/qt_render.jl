@@ -14,7 +14,7 @@ include("voxel_render_core.jl")
 
 
 export QuadTreeRenderer, render!, set_obstacles!, reset_voxels!, observe_pixels,
-       logpdf, random, save_img
+       logpdf, random, save_img, depth_map, depth_map_array
 
 """
     QuadTreeRenderer(grid_res::Int, image_res::Tuple{Int,Int}, up::SVector{3,Float64};
@@ -485,4 +485,24 @@ function save_img(img::AbstractArray, fname::AbstractString)
         end
     end
     nothing
+end
+
+
+function depth_map_array(depth_buffer)
+    # Note the transpose (depth') so index 1 (u) maps to horizontal columns,
+    # and index 2 (v) maps to vertical rows.
+    depth = Array(depth_buffer)[:, :, 1]
+    hits = depth .> 0.0f0
+    d_display = zeros(Float32, size(depth))
+    if any(hits)
+        d_min, d_max = extrema(depth[hits])
+        d_display[hits] .= one(Float32) .- (depth[hits] .- d_min) ./ max(d_max - d_min, Float32(1E-4))
+    end
+
+    # Transpose sime JuliaImages expects hxw and depth buffer is wxh
+    Gray.(d_display')
+end
+
+function depth_map(r::QuadTreeRenderer)
+    depth_map_array(r.depth_buffer)
 end

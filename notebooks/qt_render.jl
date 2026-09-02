@@ -71,6 +71,11 @@ cm-editor .cm-scroller,
 """
 
 # ╔═╡ 740595ee-0af4-4c8a-96f0-0343f7004a24
+"""
+    test_render_cross(cam_height, cam_pitch, cam_fov, obs_height_ratio)
+
+Renders a chiral test scene. 
+"""
 function test_render_cross(cam_height, cam_pitch, cam_fov, obs_height_ratio)
     # 1. Setup Renderer
     grid_dim = 128
@@ -172,21 +177,7 @@ function test_render_cross(cam_height, cam_pitch, cam_fov, obs_height_ratio)
     # 5. Render
     render!(r_test)
 
-    # 6. Display Depth Map
-    # Note the transpose (depth') so index 1 (u) maps to horizontal columns,
-    # and index 2 (v) maps to vertical rows.
-    depth = Array(r_test.depth_buffer)[:, :, 1]
-    hits = depth .> 0.0f0
-    d_display = zeros(Float32, size(depth))
-    if any(hits)
-        d_min, d_max = extrema(depth[hits])
-        d_display[hits] .= one(Float32) .- (depth[hits] .- d_min) ./ max(d_max - d_min, Float32(1E-4))
-    end
-
-    # Transpose fixes the 90-degree rotation
-    # Gray.(reverse(rotl90(d_display), dims=2))
-    # Gray.(d_display')
-    Gray.(d_display')
+    depth_map(r_test)
 end
 
 # ╔═╡ 20aaf2ed-350d-4585-aa12-6fc010d67bd2
@@ -336,14 +327,7 @@ function mytest()
 
     @time (trace, ll) = generate(qt_model, (params,))
 
-    display(trace[:trackers])
-   
-    img = trace[:depth][:, :, 1]
-    img_min, img_max = extrema(img)
-    scaled = (img .- img_min)
-    scaled .*= one(Float32) / maximum(scaled)
-
-    gray = Gray.(scaled)
+    depth_map_array(trace[:depth])
 end
 
 
@@ -353,7 +337,7 @@ mytest()
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
 # ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
-# ╟─740595ee-0af4-4c8a-96f0-0343f7004a24
+# ╠═740595ee-0af4-4c8a-96f0-0343f7004a24
 # ╟─df1e063b-08f7-4c22-a980-a756cac6c563
 # ╠═20aaf2ed-350d-4585-aa12-6fc010d67bd2
 # ╠═cff3abed-e02a-4918-80e4-3ebeba0fc59c
