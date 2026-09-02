@@ -4,7 +4,7 @@ export qt_model
 # Generative Model
 #################################################################################
 
-@gen function qt_model(t::Int, params::QuadTreeModel)
+@gen function qt_model(params::QuadTreeModel)
     # sample quad tree
     root::QTAggNode = {:trackers} ~ quad_tree_prior(params.start_node, 1)
     qt::QuadTree = QuadTree(root)

@@ -137,4 +137,4 @@ gen_fn(::QuadTreeModel) = qt_model
 # const QTModelIR = Gen.get_ir(qt_model)
 const QTTrace = Gen.get_trace_type(qt_model)
 
-include("planning.jl")
+# include("planning.jl")

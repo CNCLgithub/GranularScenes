@@ -13,7 +13,7 @@ using FunctionalCollections
 
 
 # qualified
-using Statistics: mean
+using Statistics: mean, std
 using LinearAlgebra: norm
 using Base.Iterators: product
 
