@@ -1,7 +1,5 @@
 export quad_tree_prior
 
-using Statistics: mean
-
 @gen (static) function qt_production(n::QTProdNode)
     w = produce_weight(n)
     s = @trace(bernoulli(w), :produce)

@@ -30,3 +30,4 @@ scripts/analysis/*.pdf
 .Rproj.user
 .vscode
 statprof/
+Manifest.toml

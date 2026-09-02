@@ -1,5 +1,4 @@
 using Gen
-using PyCall
 using JSON
 using Rooms: from_json, GridRoom, obstacle_tile,
     floor_tile, data
@@ -30,17 +29,26 @@ function mytest()
 
     params = QuadTreeModel(r;
                            render_kwargs =
-                               Dict(:resolution => (256,256)))
-    
-    # call works at t=0
-    (trace, ll) = generate(qt_model, (0, params,))
-    display(get_submap(get_choices(trace), :trackers))
-    display(get_submap(get_choices(trace), :changes))
-    # call works at t=1
-    (trace, ll) = generate(qt_model, (1, params,))
-    display(get_submap(get_choices(trace), :trackers))
-    display(get_choices(trace)[:changes => 1 => :change])
-    display(get_submap(get_choices(trace), :changes => 1 => :location))
+                               Dict(:image_res => (512,512),
+                                    :use_cuda => false),
+                           pixel_var = 0.01)
+
+    # cm = choicemap()
+    # cm[:trackers => (1, Val(:production)) => :produce] = true
+    # for i = 1 : 4
+    #     cm[:trackers => (i + 1, Val(:production)) => :produce] = i == 2
+    # end
+
+    # generate(qt_model, (params,))
+    # for _ = 1:10
+    #     generate(qt_model, (params,))
+    # end
+    @time (trace, ll) = generate(qt_model, (params,))
+    # display(@benchmark generate($qt_model, ($params,), $cm) seconds=10 )
+    # Profile.clear()
+    # @profilehtml (trace, ll) = generate(qt_model, (params,), cm)
+    # display(get_submap(get_choices(trace), :trackers))
+    display(trace[:depth][:, :, 1])
     return nothing
 end
 

@@ -1,7 +1,7 @@
 export QuadTreeModel, QTTrace
 
 
-include("graphics.jl")
+include("graphics/graphics.jl")
 
 #################################################################################
 # Model specification
@@ -19,8 +19,8 @@ Parameters for an instance of the `QuadTreeModel`.
     dims::Tuple{Int64, Int64}
     # coarsest node is centered at [0,0]
     # and has a span of [1,1]
-    center::SVector{2, Float64} = zeros(2)
-    bounds::SVector{2, Float64} = ones(2)
+    center::SVector{2, Float64} = SVector{2, Float64}(0, 0)
+    bounds::SVector{2, Float64} = SVector{2, Float64}(1, 1)
 
     # maximum resolution of each tracker
     max_depth::Int64
@@ -44,20 +44,20 @@ Parameters for an instance of the `QuadTreeModel`.
     # Graphics
     #############################################################################
     #
-    renderer::TaichiScene
+    renderer::QuadTreeRenderer
     # minimum variance in prediction
     pixel_var::Float32 = 1.0
 end
 
 function QuadTreeModel(gt::GridRoom;
-                       render_kwargs = Dict(),
+                       render_kwargs::Dict,
                        kwargs...)
     QuadTreeModel(;
         dims = Rooms.steps(gt),
         entrance = entrance(gt),
         exit = exits(gt),
         max_depth = _max_depth(gt),
-        renderer = TaichiScene(gt; render_kwargs...),
+        renderer = QuadTreeRenderer(; render_kwargs...),
         kwargs...
     )
 end
@@ -128,26 +128,6 @@ Returns
 function room_to_leaf(qt::QuadTree, ridx::Int64, c::Int64)
     point = idx_to_node_space(ridx, c)
     traverse_qt(qt, point)
-end
-
-function create_obs(p::QuadTreeModel, first::GridRoom, second::GridRoom)
-    _img1 = render(p.renderer, first)
-    img1 = @pycall _img1.to_numpy()::PyObject
-    _img2 = render(p.renderer, second)
-    img2 = @pycall _img2.to_numpy()::PyObject
-    constraints = Gen.choicemap()
-    constraints[:img_a] = img1
-    constraints[:img_b] = img2
-    constraints
-end
-
-function create_obs(p::QuadTreeModel, r::GridRoom,
-                    key = :img_a)
-    _img = render(p.renderer, r)
-    img = @pycall _img.to_numpy()::PyObject
-    constraints = Gen.choicemap()
-    constraints[key] = img
-    constraints
 end
 
 include("qt_model_gen.jl")
