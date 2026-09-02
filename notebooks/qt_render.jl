@@ -319,11 +319,35 @@ end
 function mytest()
     r = load_room(1)
 
+    d = grid_dim = 2 * maximum(steps(r))
+  
+    mid = d ÷ 2
+    room_half = d ÷ 2 - 4
+    max_room_height = d ÷ 2
+    obs_h = round(Int, max_room_height * obs_height_ratio)
+
+    # (a) Floor plane
+    floor_y = 2
+
+    floor_world_y = Float32(floor_y - mid)
+    cam_world_y = floor_world_y + Float32(cam_height)
+    cam_world_z = Float32(-room_half + 2)
+    cam_world_x = 0.0f0
+
+    pitch_rad = deg2rad(Float32(cam_pitch))
+    target_dist = Float32(room_half * 2)
+    target_x = 0.0f0
+    target_y = cam_world_y + target_dist * tan(pitch_rad)
+    target_z = cam_world_z + target_dist
+
     params = QuadTreeModel(r;
-                           render_kwargs =
-                               Dict(:image_res => (256,256),
-                                    :use_cuda => false),
-                           pixel_var = 0.001)
+                           render_kwargs = Dict(:image_res => (256,256), 
+                                                :use_cuda => false,
+                                                :grid_res => grid_dim,
+                         :obstacle_height => obs_h,
+                         :camera_pos => SVector{3,Float32}(cam_world_x, cam_world_y, cam_world_z),
+                         :look_at   => SVector{3,Float32}(target_x, target_y, target_z),
+                         :fov => Float32(cam_fov)))
 
     @time (trace, ll) = generate(qt_model, (params,))
 
@@ -343,9 +367,9 @@ mytest()
 # ╠═cff3abed-e02a-4918-80e4-3ebeba0fc59c
 # ╠═5e44a860-09b7-44fe-b805-bb50058a081c
 # ╠═dcad0f17-d957-4a43-87c4-f1334be5b59b
+# ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
 # ╠═d6108d2b-1d6d-4530-aafe-d2ee3b1c9c6e
 # ╟─a4186c8c-f1ad-479a-a5fc-5274b4344528
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
 # ╠═8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
-# ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb

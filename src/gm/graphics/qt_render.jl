@@ -37,6 +37,7 @@ mutable struct QuadTreeRenderer{MA<:AbstractArray, MFA<:AbstractArray}
     voxel_inv_dx::Float32
     exposure::Float32
     voxel_edges::Float32
+    obstacle_height::Int         # voxel columns rise this many cells from the floor
 
     grid_material::MA
     grid_material_reset::MA
@@ -91,6 +92,10 @@ function QuadTreeRenderer(;grid_res::Int = 128,
                           image_res::Tuple{Int,Int} = (512,512),
                           up::SVector{3,Float32} = SVector(0.0f0, 1.0f0, 0.0f0),
                           exposure::Float32 = 1.0f0, voxel_edges::Float32 = 0.005f0,
+                          obstacle_height::Int = -1,          # -1 → default grid_res ÷ 6 (Taichi oheight n//6)
+                          camera_pos::SVector{3,Float32} = SVector(0.4f0, 40.0f0, 60.0f0),
+                          fov::Float32 = 0.56f0,
+                          look_at::SVector{3, Float32} = SVector(0.0f0, -5.0f0, -60.0f0),
                           use_cuda::Bool = CUDA.functional())
     alloc = buffer_allocator(use_cuda)
     m = grid_res
@@ -120,15 +125,14 @@ function QuadTreeRenderer(;grid_res::Int = 128,
     fill!(bbox, 0.0f0)
     fill!(rand_buffer, 0.0f0)
 
-    camera_pos = SVector{3,Float32}(0.4f0, 0.5f0, 2.0f0)
-    look_at = SVector{3,Float32}(0.0f0, 0.0f0, 0.0f0)
     upv = SVector{3,Float32}(up[1], up[2], up[3])
-    fov = Float32(0.23)
+    oh = obstacle_height < 0 ? grid_res ÷ 6 : obstacle_height
+    oh = min(oh, grid_res)          # clamp: never taller than the grid
     floor_height = 0.0f0
     light_direction = SVector{3,Float32}(0.0f0, 1.0f0, 0.0f0)
     light_direction_noise = 0.0f0
 
-    QuadTreeRenderer(grid_res, image_res, 1.0f0, 1.0f0, exposure, voxel_edges,
+    QuadTreeRenderer(grid_res, image_res, 1.0f0, 1.0f0, exposure, voxel_edges, oh,
                      grid_material, grid_material_reset,
                      depth_buffer, rendered, noise_buffer, bbox, rand_buffer,
                      leaf_inds, leaf_weights, max_cells,
@@ -187,12 +191,13 @@ end
 # set_obstacles: for each (i,j) in rand_buffer with val > eps, fill the column
 # from y in -hn : oheight-1 with material=val
 function _set_obstacles_kernel!(material,
-                                rand_buffer)
+                                rand_buffer,
+                                obstacle_height::Int)
     @inbounds begin
         nx, ny = size(rand_buffer, 1), size(rand_buffer, 2)
         n = max(nx, ny)
         hn = n ÷ 2
-        oheight = n ÷ 6 - hn
+        oheight = -hn + obstacle_height     # floor at -hn, rise obstacle_height cells
         AK.foreachindex(rand_buffer) do I
             i = (I - 1) % nx + 1
             j = (I - 1) ÷ nx + 1
@@ -218,7 +223,7 @@ end
 function set_obstacles!(r::QuadTreeRenderer, omap::AbstractMatrix)
     # ensure rand_buffer receives the map
     copyto!(r.rand_buffer, reshape(omap, size(r.rand_buffer,1), size(r.rand_buffer,2)))
-    _set_obstacles_kernel!(r.grid_material, r.rand_buffer)
+    _set_obstacles_kernel!(r.grid_material, r.rand_buffer, r.obstacle_height)
     nothing
 end
 
@@ -278,7 +283,8 @@ reconstructs `(col, row)` from the index and writes every vertical column
 function _project_qt_to_grid_kernel!(grid,
                                      leaf_inds,
                                      leaf_weights,
-                                     n::Int)
+                                     n::Int,
+                                     obstacle_height::Int)
     d = size(grid, 1)
     AK.foreachindex(leaf_inds) do i
         i > n && return nothing
@@ -287,8 +293,8 @@ function _project_qt_to_grid_kernel!(grid,
         w == 0.0f0 && return nothing
         col = ((li - 1) % d) + 1
         row = (li - 1) ÷ d + 1
-        # vertical column: fill all y at this (gx, gz)
-        for gy in 1:d
+        # vertical column: rise obstacle_height cells from the floor (bottom rows)
+        for gy in 1:obstacle_height
             grid[col, gy, row] = w
         end
     end
@@ -301,7 +307,8 @@ end
 function _project_qt_to_grid!(grid,
                               leaf_inds,
                               leaf_weights,
-                              n::Int)
+                              n::Int,
+                              obstacle_height::Int = size(grid, 2))
     d = size(grid, 1)
     @inbounds for i in 1:n
         li = leaf_inds[i]
@@ -310,7 +317,7 @@ function _project_qt_to_grid!(grid,
         col = ((li - 1) % d) + 1
         row = (li - 1) ÷ d + 1
         # vertical column: fill all y at this (gx, gz)
-        for gy in 1:d
+        for gy in 1:obstacle_height
             grid[col, gy, row] = w
         end
     end
@@ -340,11 +347,11 @@ function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
         copyto!(r.leaf_weights, r.pack_wts)
         resize!(r.pack_inds, d * d)   # restore capacity for next pack
         resize!(r.pack_wts, d * d)
-        _project_qt_to_grid_kernel!(r.grid_material, r.leaf_inds, r.leaf_weights, n)
+        _project_qt_to_grid_kernel!(r.grid_material, r.leaf_inds, r.leaf_weights, n, r.obstacle_height)
     else
         # CPU: host-resident buffers already hold the packed prefix; project
         # natively (no AK needed — this is a small scatter, not a pixel loop).
-        _project_qt_to_grid!(r.grid_material, r.pack_inds, r.pack_wts, n)
+        _project_qt_to_grid!(r.grid_material, r.pack_inds, r.pack_wts, n, r.obstacle_height)
     end
     recompute_bbox!(r)   # keep bbox fresh after every obstacle write
     nothing
