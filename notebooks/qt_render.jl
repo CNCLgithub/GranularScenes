@@ -320,7 +320,7 @@ end
 function mytest()
     r = load_room(1)
 
-    d = grid_dim = 128
+    d = grid_dim = 16
   
     mid = d ÷ 2
     room_half = d ÷ 2 - 4
@@ -351,25 +351,95 @@ function mytest()
                          :fov => Float32(cam_fov)))
 
 
+    qt = QuadTree(quad_tree_prior(params.start_node, 1))
+    @time depth = qt_observe(params.renderer, qt, params.pixel_var)
 
-    @time (trace, ll) = generate(qt_model, (params,))
+    
+ 
 
     @show params.renderer.bbox
 
-    depth_map_array(trace[:depth])
+    
+
+    (params.renderer, depth_map_array(depth))
 end
 
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
-mytest()
+begin
+    renderer, depth = mytest();
+    depth
+end
 
-# ╔═╡ d06d005d-7978-4cd5-919b-b0a831c04ce8
+# ╔═╡ 96230e38-9edf-4fa5-ab2e-a80b699371cf
+# Debug visualizers for the renderer's obstacle buffer (`grid_material`).
+# Paste into notebooks/qt_render.jl after a `write_obstacles!(r, qt)` call.
+# Shows the buffer directly (orthographic projections), independent of the
+# ray marcher, so you can confirm the buffer is filled as expected.
 
+"""
+    debug_topdown(r::QuadTreeRenderer)
+
+Top-down orthographic view of the obstacle buffer: maximum intensity over the
+vertical axis (dim 2), giving the floor plan `(x, z)` plane.
+"""
+function debug_topdown(r::QuadTreeRenderer)
+    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
+    top_down = dropdims(maximum(mat, dims = 2), dims = 2)   # (x, z)
+    @show size(top_down)
+    return Gray.(clamp.(top_down', 0.0f0, 1.0f0))            # (z, x) display
+end
+
+# ╔═╡ 5f309061-321a-412d-a1dd-f1da047568f4
+debug_topdown(renderer)           # floor plan
+
+# ╔═╡ f5927a6a-566a-4d8e-af45-f6f530b8b9fa
+"""
+    debug_sideview(r::QuadTreeRenderer; from_x = true)
+
+Side orthographic view of the obstacle buffer.  `from_x = true` projects along
+the lateral axis (dim 1) → the (z, y) elevation from the side.  `from_x =
+false` projects along z (dim 3) → the (x, y) elevation from the front.
+"""
+function debug_sideview(r::QuadTreeRenderer; from_x::Bool = true)
+    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
+    if from_x
+        side = dropdims(maximum(mat, dims = 1), dims = 1)    # (y, z)
+        return Gray.(clamp.(reverse(side, dims = 1)', 0.0f0, 1.0f0))  # (z, y), y up
+    else
+        side = dropdims(maximum(mat, dims = 3), dims = 3)    # (x, y)
+        return Gray.(clamp.(reverse(side, dims = 1)', 0.0f0, 1.0f0))  # (y, x), y up
+    end
+end
+
+# ╔═╡ 95103afa-e049-4088-b2ee-c6cdc65180a0
+debug_sideview(renderer)          # elevation from the side
+
+# ╔═╡ 57184b8c-e34b-4fbf-a870-02f795e1396e
+"""
+    debug_occupancy_stats(r::QuadTreeRenderer)
+
+Counts of occupied voxels and per-slab occupancy (how many cells are filled at
+each gy) — quick numeric confirmation that the buffer is being filled.
+"""
+function debug_occupancy_stats(r::QuadTreeRenderer)
+    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
+    d = size(mat, 1)
+    occ = count(!iszero, mat)
+    per_gy = [count(!iszero, @view mat[:, gy, :]) for gy in 1:d]
+    top = findlast(!iszero, per_gy)
+    return (occupied = occ, fraction = occ / (d^3),
+            top_gy = top === nothing ? 0 : top,
+            max_gy = maximum(per_gy), argmax_gy = argmax(per_gy))
+end
+
+# ╔═╡ 2f4fa50d-d1d5-4349-8411-3891b24ca0c5
+debug_occupancy_stats(renderer)   # numbers
 
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
 # ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
-# ╠═740595ee-0af4-4c8a-96f0-0343f7004a24
+# ╟─740595ee-0af4-4c8a-96f0-0343f7004a24
 # ╟─df1e063b-08f7-4c22-a980-a756cac6c563
 # ╠═20aaf2ed-350d-4585-aa12-6fc010d67bd2
 # ╠═cff3abed-e02a-4918-80e4-3ebeba0fc59c
@@ -381,4 +451,9 @@ mytest()
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
 # ╠═8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
-# ╠═d06d005d-7978-4cd5-919b-b0a831c04ce8
+# ╠═5f309061-321a-412d-a1dd-f1da047568f4
+# ╠═95103afa-e049-4088-b2ee-c6cdc65180a0
+# ╠═2f4fa50d-d1d5-4349-8411-3891b24ca0c5
+# ╠═96230e38-9edf-4fa5-ab2e-a80b699371cf
+# ╠═f5927a6a-566a-4d8e-af45-f6f530b8b9fa
+# ╠═57184b8c-e34b-4fbf-a870-02f795e1396e

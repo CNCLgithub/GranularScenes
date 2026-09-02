@@ -19,7 +19,7 @@ function Gen.logpdf(::QTObserve, x::Array{Float32}, r::QuadTreeRenderer, qt::Qua
     Float64(ls)
 end
 
-(::QTObserve)(r, qt, var) = Gen.random(observe_pixels, r, qt, var)
+(::QTObserve)(r, qt, var) = Gen.random(qt_observe, r, qt, var)
 
 is_discrete(::QTObserve) = false
 Gen.has_output_grad(::QTObserve) = false

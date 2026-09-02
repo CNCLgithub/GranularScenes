@@ -442,41 +442,22 @@ function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     (mat isa Array) && fill!(mat, 0.0f0)
     host = (mat isa Array) ? mat : Array(mat)
 
-    # enclosure: floor slab fills occ foot [lo,hi] with 1.0; walls are vertical
-    # so drawn separately in 3-D; ceiling likewise.
-    d2 = d ÷ 2
-    room_half = d2 - 4
-    lo, hi = d2 - room_half, d2 + room_half
-    max_height = r.obstacle_height
-    floor_y = 2
-    # floor slab in occ (so obstacles stand ON it, and it shows in the render).
-    # occ[gx, gz] with gx=col, gz=row reads occ[col,row] == occ[gz,gx]...
-    # Actually occ[row,col]; with lo..hi symmetric it's fine either way, but
-    # extrude reads occ[gz, gx] == occ[row, col] which matches occ[li] above.
-    for gz in lo:hi, gx in lo:hi
-        occ[gz, gx] = max(occ[gz, gx], 1.0f0)   # note: row-first read
-    end
-    # extrude: copy occ into grid[:, 1:obstacle_height, :]
-    oh = clamp(r.obstacle_height, 0, d)
+    # Extrude the leaf footprint plane into the 3-D grid.  The enclosure
+    # (floor + walls + ceiling at ROOM height) is drawn afterwards by
+    # draw_room_enclosure!, so occ only carries the sampled leaf weights.
+    # occ is column-major from node_to_idx (li = (c1-1)*d + c2), so reading
+    # occ[gz, gx] with gz=row, gx=col matches it exactly.
+    oh = clamp(r.obstacle_height, 1, d)
     for gy in 1:oh, gz in 1:d, gx in 1:d
         o = occ[gz, gx]   # occ[row=z, col=x]
         o == 0.0f0 || (host[gx, gy, gz] = o)
     end
 
-    # walls + ceiling in 3-D (after extrusion so they cap the obstacle blocks)
-    for gy in floor_y:(floor_y + max_height)
-        top = min(gy, d)
-        for i in lo:hi
-            host[lo, top, i] = 1.0f0
-            host[hi, top, i] = 1.0f0
-            host[i, top, hi] = 1.0f0
-        end
-    end
-    ctop = min(floor_y + max_height, d)
-    for gz in lo:hi, gx in lo:hi
-        host[gx, ctop, gz] = 1.0f0
-    end
-
+    # Enclosure (floor + walls + ceiling) is drawn by draw_room_enclosure!
+    # with max_height = d÷2, so walls rise to ROOM height (above the camera).
+    # The obstacles (leaf columns) were extruded above; there is no separate
+    # low ceiling here — that was the "dome" bug (ceiling below camera height).
+    # draw_room_enclosure!(host, d)
     (mat isa CuArray) && copyto!(mat, host)
     recompute_bbox!(r)   # keep bbox fresh after every obstacle write
     nothing
