@@ -15,7 +15,7 @@ def init_dd_state(config_path:str, device):
       config = yaml.safe_load(file)
    # first load encoder
    decoder = Decoder(**config['model_params'])
-   vae = VAE(**config['vae_params'])
+   vae = VAE(**config['model_params'])
    encoder = SceneEmbedding.load_from_checkpoint(config['vae_chkpt'],
                                                  model = vae)
    decode_path = config['logging_params']['save_dir']

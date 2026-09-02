@@ -40,5 +40,6 @@ include("utils/utils.jl")
 include("dgp/dgp.jl")
 include("gm/gm.jl")
 include("inference/inference.jl")
+include("planning.jl")
 
 end # module GranularScenes

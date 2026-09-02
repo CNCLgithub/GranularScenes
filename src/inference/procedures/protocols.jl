@@ -2,6 +2,8 @@ using LinearAlgebra: rmul!
 using DataStructures: PriorityQueue
 using Base.Order: Ordering, ReverseOrdering, Reverse
 
+using Printf: @printf
+
 export AttentionProtocal,
     UniformProtocol,
     AdaptiveComputation
@@ -57,9 +59,9 @@ end
 
 function rw_block_complete!(aux::UniformAux, p::UniformProtocol,
                             t::Gen.Trace, node)
-    @unpack steps, accepts = aux
+    # @unpack steps, accepts = aux
     # println("RW acceptance ratio for node $(node): $(accepts  / steps)")
-    aux.steps = 0
+    # aux.steps = 0
     return nothing
 end
 
@@ -102,7 +104,7 @@ end
 
 @with_kw struct AdaptiveComputation <: AttentionProtocol
     # Goal driven belief
-    objective::Function = qt_path_cost
+    objective::Function = quad_tree_path
     # destance metrics for two task objectives
     distance::Function = (x, y) -> norm(x - y)
 
@@ -112,72 +114,59 @@ end
 
 
 mutable struct AdaptiveAux <: AuxillaryState
-    delta_pi::Float64
-    delta_s::Float64
-    objective::Any
+    delta_pi::Dict{Int64, Float64}
+    delta_s::Dict{Int64, Float64}
     accepts::Int64
     steps::Int64
-    sensitivities::Matrix{Float64}
+    temp::Float64
     queue::PriorityQueue{Int64, Float64, ReverseOrdering}
 end
 
-function AuxState(p::AdaptiveComputation, trace)
-    dims = first(get_args(trace)).dims
-    ndims = prod(dims)
-    sensitivities = zeros(dims)
-    queue = init_queue(trace)
-    AdaptiveAux(0., 0., 0., 0, 0,
-                sensitivities,
-                queue)
+function AuxState(p::AdaptiveComputation, trace::QTTrace)
+    (_, _, dpi) = p.objective(trace)
+    # go through the current set of terminal nodes
+    # and intialize priority
+    ds = Dict{Int64, Float64}()
+    q = PriorityQueue{Int64, Float64, ReverseOrdering}(Reverse)
+    qt = get_retval(trace)
+    lvs = leaves(qt)
+    n = length(lvs)
+    for i = 1:n
+        x = @inbounds node(lvs[i])
+        idx = tree_idx(x)
+        ds[idx] = 0.0
+        dpi[idx] = log(get(dpi, idx, 0.))
+        q[idx] = dpi[idx]
+    end
+    AdaptiveAux(dpi, ds, 0, 0, 1.0, q)
 end
 
 accepts(aux::AdaptiveAux) = aux.accepts
 
 function select_node(p::AdaptiveComputation, aux::AdaptiveAux)
-
     ks = collect(keys(aux.queue))
-    ws = collect(values(aux.queue))
-
-    clamp!(ws, -100, Inf)
-    ws = softmax(ws, 1.0)
-    stop = 0.0
-    node = 0
-    gr = 0.0
+    raw = collect(values(aux.queue))
+    # clamp!(raw, 0.01, Inf)
+    ws = softmax(raw, aux.temp) # TODO: add as hyperparameter
     nidx = categorical(ws)
     node = ks[nidx]
-    gr = aux.queue[node]
-    if bernoulli(0.1)
-        node = rand(keys(aux.queue))
-        gr = aux.queue[node]
-    end
-    # println("Adaptive Protocol: node $(node), relevance $(gr)")
-    # i = 1
-    # for kv = aux.queue
-    #     i > 3 && break
-    #     println("\t $(kv) | $(ws[i])")
-    #     i += 1
-    # end
-
-    node
+    # @printf("Selected node: %d; GR: %3g Pr: %3g\n",
+    #         node,
+    #         round(aux.queue[node]; sigdigits=3),
+    #         round(pselect; sigdigits=3),
+    #         )
+    return node
 end
 
 function rw_block_init!(aux::AdaptiveAux, p::AdaptiveComputation,
-                        trace)
+                        trace::Gen.Trace)
     aux.accepts = 0
-    aux.delta_pi = 0.0
-    aux.delta_s = 0.0
-    aux.objective = p.objective(trace)
+    aux.steps = 0
     return nothing
 end
 
 function rw_block_inc!(aux::AdaptiveAux, p::AdaptiveComputation,
                        t, node, alpha)
-    obj_t_prime = p.objective(t)
-    aux.delta_pi += p.distance(aux.objective, obj_t_prime)
-    # ds = alpha < -20 ? 0.0 : exp(alpha)
-    aux.delta_s = logsumexp(aux.delta_s, alpha)
-    # aux.delta_s += exp(min(0.0, alpha))
-    # aux.delta_s += -0.01
     aux.steps += 1
     return nothing
 end
@@ -187,8 +176,6 @@ function rw_block_accept!(aux::AdaptiveAux,
                           p::AdaptiveComputation,
                           t::Gen.Trace, node)
     aux.accepts += 1
-    # aux.delta_s += 0.01
-    aux.objective = p.objective(t)
     return nothing
 end
 
@@ -199,24 +186,20 @@ end
 
 function rw_block_complete!(aux::AdaptiveAux,
                             p::AdaptiveComputation,
-                            t, node)
-    # compute goal-relevance
+                            t::Gen.Trace, n::Int)
+    (_, _, grads) = p.objective(t)
     @unpack delta_pi, delta_s, steps, accepts = aux
-    delta_pi = log(delta_pi) - log(steps)
-    delta_s = delta_s - log(steps)
-    goal_relevance = delta_pi + delta_s
-    # goal_relevance = log(delta_pi) + log(delta_s) - 2 * log(steps)
-
-    # update aux state
-    # qt = get_retval(t)
-    # prod_node = traverse_qt(qt, node).node
-    # sidx = node_to_idx(prod_node, max_leaves(qt))
-    # for i = sidx
-    #     aux.sensitivities[i] = goal_relevance
-    # end
-    aux.queue[node] = goal_relevance
     accept_ratio = accepts / steps
-    # println("\t $(delta_pi) + $(delta_s) | AR=$(accept_ratio)")
+    delta_s[n] = logsumexp(delta_s[n], log(accept_ratio)) - log(2.0)
+    delta_pi[n] = logsumexp(delta_pi[n], log(get(grads, n, 0.0))) - log(2.0)
+    aux.queue[n] = delta_pi[n] + delta_s[n]
+    # @printf("Node: %d, AR= %3g, GR=%3g, dPi=%3g, dS=%3g \n",
+    #         n,
+    #         round(accept_ratio; sigdigits=3),
+    #         round(aux.queue[n]; sigdigits=3),
+    #         round(delta_pi[n]; sigdigits=3),
+    #         round(delta_s[n]; sigdigits=3),
+    #         )
     return nothing
 end
 
@@ -226,18 +209,53 @@ function sm_block_init!(aux::AdaptiveAux, p::AdaptiveComputation)
     return nothing
 end
 
+function sm_block_accept!(aux::AdaptiveAux, n::Int)
+    aux.accepts += 1
+    return nothing
+end
+
 function sm_block_accept!(aux::AdaptiveAux, node, move)
     aux.accepts += 1
     update_queue!(aux.queue, node, move)
+    return nothing
 end
 
 function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
-                            node, move)
-    # println("Accepted move $(move) on node $(node)")
+                            n::Int, move)
+    return nothing
+end
+
+function sm_block_complete!(aux::AdaptiveAux, p::AdaptiveComputation,
+                            tr::Gen.Trace,
+                            n::Int)
+    (_, _, grads) = p.objective(tr)
+    # go through the current set of terminal nodes
+    # and intialize priority
+    qt = get_retval(tr)
+    lvs = leaves(qt)
+    n = length(lvs)
+    current = collect(keys(qt.mapping))
+    to_purge = setdiff(keys(aux.queue), current)
+    for idx = to_purge
+        delete!(aux.queue, idx)
+        delete!(aux.delta_s, idx)
+        delete!(aux.delta_pi, idx)
+    end
+    for idx = current
+        aux.delta_pi[idx] = haskey(grads, idx) ?
+            log(grads[idx]) :
+            get(aux.delta_pi, idx, -Inf)
+        aux.delta_s[idx] = get(aux.delta_s, idx, 0.0)
+        aux.queue[idx] = logsumexp(
+            get(aux.queue, idx, -Inf),
+            aux.delta_pi[idx] + aux.delta_s[idx]
+        ) - log(2.0)
+    end
     return nothing
 end
 
 function attention_map(aux::AdaptiveAux, t::Gen.Trace)
+    # amap = Matrix{Float32}(aux.gr)
     qt = get_retval(t)
     n = max_leaves(qt)
     amap = Matrix{Float32}(undef, n, n)
@@ -255,13 +273,23 @@ end
 # Helpers
 #################################################################################
 
-function init_queue(tr::Gen.Trace)
-    qt = get_retval(tr)
+function init_queue(tr::Gen.Trace, gr::Matrix, delta_pi)
     q = PriorityQueue{Int64, Float64, ReverseOrdering}(Reverse)
     # go through the current set of terminal nodes
     # and intialize priority
-    for n = qt.leaves
-        q[n.node.tree_idx] = log(area(n.node))
+    qt = get_retval(tr)
+    lvs = leaves(qt)
+    n = length(lvs)
+    ml = max_leaves(qt)
+    for i = 1:n
+        x = @inbounds node(lvs[i])
+        idx = tree_idx(x)
+        dpi = log(get(delta_pi, idx, 0.0))
+        q[idx] = dpi
+        # sidx = node_to_idx(x, ml)
+        # for mi = sidx
+        #     gr[mi] = dpi - log(length(sidx))
+        # end
     end
     return q
 end
@@ -286,6 +314,35 @@ function update_queue!(queue, node::Int64, move::Merge)
         prev_val = logsumexp(prev_val, queue[cid])
         delete!(queue, cid)
     end
-    queue[parent] = prev_val # * 0.25
+    queue[parent] = prev_val
     return nothing
+end
+
+# REVIEW: not used?
+function update_queue!(queue, gr::Matrix{Float64},
+                       tr::Gen.Trace)
+    qt = get_retval(tr)
+    ml = max_leaves(qt)
+    empty!(queue)
+    for l = qt.leaves
+        nde = node(l)
+        idx = tree_idx(nde)
+        mat_idxs = node_to_idx(nde, ml)
+        queue[idx] = logsumexp(gr[mat_idxs])
+    end
+    return nothing
+end
+
+function viz_node(tr, node::Int64)
+    qt = get_retval(tr)
+    n = max_leaves(qt)
+    leaves = qt.leaves
+    m = Matrix{Bool}(undef, n, n)
+    fill!(m, false)
+    v = leaf_from_idx(qt, node).node
+    for idx = node_to_idx(v, n)
+        m[idx] = true
+    end
+    println("Selected node")
+    display_mat(m)
 end

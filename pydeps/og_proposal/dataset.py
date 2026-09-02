@@ -34,11 +34,9 @@ class OGVAEDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = os.path.join(self.src, str(idx+1), self.render_type + '.png')
-        # image = np.asarray(read_image(img_path))
         image = pil_loader(img_path)
         og_path = os.path.join(self.src, str(idx+1), 'og.png')
         og = load_og(og_path)
-        # og = pil_loader(og_path)
         return image, og
 
 def write_ffcv_data(d: OGVAEDataset,

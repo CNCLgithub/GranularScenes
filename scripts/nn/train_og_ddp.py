@@ -4,6 +4,7 @@ import torch
 import argparse
 import numpy as np
 from pathlib import Path
+from ffcv.loader import OrderOption
 from lightning.pytorch import (Trainer,
                                seed_everything)
 from lightning.pytorch.loggers import CSVLogger
@@ -42,7 +43,7 @@ def main():
         task = SceneEmbedding(arch,  **config['exp_params'])
         loader = ogvae_loader
     elif config['mode'] == 'og_decoder':
-        vae = VAE(**config['vae_params'])
+        vae = VAE(**config['model_params'])
         encoder = SceneEmbedding.load_from_checkpoint(config['vae_chkpt'],
                                                       model = vae)
         decoder = Decoder(**config['model_params'])
@@ -55,10 +56,11 @@ def main():
     runner = Trainer(logger=logger,
                      callbacks=[
                          LearningRateMonitor(),
-                         ModelCheckpoint(save_top_k=2,
+                         ModelCheckpoint(save_top_k=3,
                                          dirpath =os.path.join(logger.log_dir , "checkpoints"),
                                          monitor= "val_loss",
-                                         save_last=True),
+                                         save_last=True,
+                                         every_n_epochs=10),
                      ],
                      accelerator = 'auto',
                      deterministic = False,
@@ -67,9 +69,10 @@ def main():
     device = torch.device('cuda:0')
     train_loader = loader(config['path_params']['train_path'],
                           device, 
-                          **config['loader_params'])
+                          **config['loader_params'],
+                          order = OrderOption.RANDOM)
     test_loader = loader(config['path_params']['test_path'],
-                         device, batch_size = 4)
+                         device, batch_size = 16)
 
 
     Path(f"{logger.log_dir}/samples").mkdir(exist_ok=True, parents=True)
