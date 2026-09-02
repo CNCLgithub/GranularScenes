@@ -406,38 +406,78 @@ function draw_room_enclosure!(mat, d::Int;
             mat[i, gy, hi] = 1.0f0   # back wall
         end
     end
+    # (c) ceiling slab at the top of the room (camera looks down, sees it)
+    top = floor_y + max_height
+    for gz in lo:hi, gx in lo:hi
+        @inbounds mat[gx, top, gz] = 1.0f0
+    end
     nothing
 end
 
 function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     d = grid_res(r)
     lv = qt.leaves
-    n = pack_leaf_cells!(r.pack_inds, r.pack_wts, lv, d)
-    r.pack_n = n
-    # Room enclosure (floor + back/left/right walls), independent of the
-    # sampled leaves.  Clear first so repeated writes don't accumulate.
+    # Floor-plan extrusion: build a dense d×d occupancy (leaf weights) on the
+    # host from the full leaf footprints (project_qt! semantics), then extrude
+    # it up through the obstacle-height column range.  This guarantees solid,
+    # gap-free obstacle blocks — no per-cell dilation (the 3×3 hack caused
+    # neighbor thrash) and no weight clobbering between leaves.
+    #
+    # The floor plan also carries the room enclosure (floor footprint +
+    # walls in 2-D), so we draw the enclosure into the same matrix first.
+    occ = zeros(Float32, d, d)
+    # node_to_idx returns linear indices li = (c1-1)*d + c2 with c1=X/col,
+    # c2=Y/row.  Julia column-major: occ[li] == occ[c2, c1] == occ[row, col].
+    for x in lv
+        w = weight(x)
+        w = w > 0.025f0 ? Float32(w) : 0.0f0
+        w == 0.0f0 && continue
+        for li in node_to_idx(x.node, d)
+            occ[li] = max(occ[li], w)   # union, not overwrite
+        end
+    end
+
     mat = r.grid_material
     (mat isa CuArray) && (mat .= 0.0f0)
     (mat isa Array) && fill!(mat, 0.0f0)
     host = (mat isa Array) ? mat : Array(mat)
-    draw_room_enclosure!(host, d)
-    (mat isa CuArray) && copyto!(mat, host)
-    if r.grid_material isa CuArray
-        # GPU: upload the used prefix (bulk H2D), then run the device kernel.
-        # pack_inds/pack_wts are dense host Vectors of capacity d*d; resize!
-        # to the used prefix is O(1) (length-only), copyto! is a bulk transfer.
-        resize!(r.pack_inds, n)
-        resize!(r.pack_wts, n)
-        copyto!(r.leaf_inds, r.pack_inds)
-        copyto!(r.leaf_weights, r.pack_wts)
-        resize!(r.pack_inds, d * d)   # restore capacity for next pack
-        resize!(r.pack_wts, d * d)
-        _project_qt_to_grid_kernel!(r.grid_material, r.leaf_inds, r.leaf_weights, n, r.obstacle_height)
-    else
-        # CPU: host-resident buffers already hold the packed prefix; project
-        # natively (no AK needed — this is a small scatter, not a pixel loop).
-        _project_qt_to_grid!(r.grid_material, r.pack_inds, r.pack_wts, n, r.obstacle_height)
+
+    # enclosure: floor slab fills occ foot [lo,hi] with 1.0; walls are vertical
+    # so drawn separately in 3-D; ceiling likewise.
+    d2 = d ÷ 2
+    room_half = d2 - 4
+    lo, hi = d2 - room_half, d2 + room_half
+    max_height = r.obstacle_height
+    floor_y = 2
+    # floor slab in occ (so obstacles stand ON it, and it shows in the render).
+    # occ[gx, gz] with gx=col, gz=row reads occ[col,row] == occ[gz,gx]...
+    # Actually occ[row,col]; with lo..hi symmetric it's fine either way, but
+    # extrude reads occ[gz, gx] == occ[row, col] which matches occ[li] above.
+    for gz in lo:hi, gx in lo:hi
+        occ[gz, gx] = max(occ[gz, gx], 1.0f0)   # note: row-first read
     end
+    # extrude: copy occ into grid[:, 1:obstacle_height, :]
+    oh = clamp(r.obstacle_height, 0, d)
+    for gy in 1:oh, gz in 1:d, gx in 1:d
+        o = occ[gz, gx]   # occ[row=z, col=x]
+        o == 0.0f0 || (host[gx, gy, gz] = o)
+    end
+
+    # walls + ceiling in 3-D (after extrusion so they cap the obstacle blocks)
+    for gy in floor_y:(floor_y + max_height)
+        top = min(gy, d)
+        for i in lo:hi
+            host[lo, top, i] = 1.0f0
+            host[hi, top, i] = 1.0f0
+            host[i, top, hi] = 1.0f0
+        end
+    end
+    ctop = min(floor_y + max_height, d)
+    for gz in lo:hi, gx in lo:hi
+        host[gx, ctop, gz] = 1.0f0
+    end
+
+    (mat isa CuArray) && copyto!(mat, host)
     recompute_bbox!(r)   # keep bbox fresh after every obstacle write
     nothing
 end
