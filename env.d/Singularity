@@ -1,0 +1,28 @@
+bootstrap: docker
+from: nvidia/cuda:12.9.2-cudnn-devel-ubuntu24.04
+
+%environment
+    export PATH=$PATH:/usr/local/julia/bin
+
+%runscript
+    exec bash "$@"
+
+%post
+export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends ca-certificates wget tar
+    apt-get clean
+
+    wget -q https://julialang-s3.julialang.org/bin/linux/x64/1.11/julia-1.11.9-linux-x86_64.tar.gz
+    tar -xzf julia-1.11.9-linux-x86_64.tar.gz -C /usr/local/
+    ln -sf /usr/local/julia-1.11.9/bin/julia /usr/local/bin/julia
+    rm julia-1.11.9-linux-x86_64.tar.gz
+
+
+    # --- sbatch/scancel/srun workarounds (cluster passthrough) ------------
+    printf '#!/bin/bash\nssh -y "$HOSTNAME"  sbatch "$@"\n'  > /usr/bin/sbatch
+    chmod +x /usr/bin/sbatch
+    printf '#!/bin/bash\nssh -y "$HOSTNAME"  scancel "$@"\n' > /usr/bin/scancel
+    chmod +x /usr/bin/scancel
+    printf '#!/bin/bash\nssh -y "$HOSTNAME"  srun "$@"\n'    > /usr/bin/srun
+    chmod +x /usr/bin/srun

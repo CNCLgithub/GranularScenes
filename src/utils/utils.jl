@@ -42,14 +42,14 @@ end
 # IO
 #################################################################################
 
-function process_taichi_array(array::PyObject)
-    arr = @pycall array.to_numpy()::Array
-    reverse!(arr, dims = 1)
-    reverse!(arr, dims = 2)
-    return arr
-end
+# function process_taichi_array(array::PyObject)
+#     arr = @pycall array.to_numpy()::Array
+#     reverse!(arr, dims = 1)
+#     reverse!(arr, dims = 2)
+#     return arr
+# end
 
-function save_img_array(array::PyObject, path::String)
+function save_img_array(array, path::String)
     save_img_array(process_taichi_array(array), path)
 end
 
@@ -91,12 +91,12 @@ function read_json(path)
 end
 
 function _init_graphics()
-    variants = @pycall mi.variants()::PyObject
-    if "cuda_ad_rgb" in variants
-        @pycall mi.set_variant("cuda_ad_rgb")::PyObject
-    else
-        @pycall mi.set_variant("scalar_rgb")::PyObject
-    end
+    # variants = @pycall mi.variants()::PyObject
+    # if "cuda_ad_rgb" in variants
+    #     @pycall mi.set_variant("cuda_ad_rgb")::PyObject
+    # else
+    #     @pycall mi.set_variant("scalar_rgb")::PyObject
+    # end
     return nothing
 end
 

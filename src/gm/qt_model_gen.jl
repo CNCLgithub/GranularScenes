@@ -10,13 +10,7 @@ export qt_model
     qt::QuadTree = QuadTree(root)
 
     # predict pixels from occupancy probabilities
-    {:pixels} ~ observe_pixels(params.renderer, qt, params.pixel_var)
+    depth ~ qt_observe(params.renderer, qt, params.pixel_var)
 
     return qt
 end
-
-# shortest path given qt uncertainty
-# qtpath::QTPath = qt_a_star(qt, params.obs_cost, params.entrance, params.exit)
-#
-# Model state
-# result::QuadTreeState = QuadTreeState(qt, mu, var, qtpath)

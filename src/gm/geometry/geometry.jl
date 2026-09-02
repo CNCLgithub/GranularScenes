@@ -110,21 +110,22 @@ const q4 = SVector{2, Float64}([ 1.0, -1.0])
 Splits the node into 4 children, centered in 4 quadrants
 with respect to the center of the parent.
 """
-function produce_qt(n::QTProdNode)::SVector{4, QTProdNode}
-    @unpack center, level, max_level = n
+function produce_qt(n::QTProdNode)::Vector{QTProdNode}
+    @unpack level, max_level = n
+    c = center(n)
     dc = 0.25 .* dims(n)  # offset by 1/4 of dims
     new_dims = 0.5 .* dims(n)
     offs = (q1 .* dc, q2 .* dc, q3 .* dc, q4 .* dc)
-    SVector{4, QTProdNode}((
-        QTProdNode(center + offs[1], new_dims, level + 1, max_level,
+    QTProdNode[
+        QTProdNode(c + offs[1], new_dims, level + 1, max_level,
                    Gen.get_child(n.tree_idx, 1, 4)),
-        QTProdNode(center + offs[2], new_dims, level + 1, max_level,
+        QTProdNode(c + offs[2], new_dims, level + 1, max_level,
                    Gen.get_child(n.tree_idx, 2, 4)),
-        QTProdNode(center + offs[3], new_dims, level + 1, max_level,
+        QTProdNode(c + offs[3], new_dims, level + 1, max_level,
                    Gen.get_child(n.tree_idx, 3, 4)),
-        QTProdNode(center + offs[4], new_dims, level + 1, max_level,
+        QTProdNode(c + offs[4], new_dims, level + 1, max_level,
                    Gen.get_child(n.tree_idx, 4, 4)),
-    ))
+    ]
 end
 
 
