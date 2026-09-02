@@ -324,9 +324,15 @@ function _project_qt_to_grid_kernel!(grid,
         # round-based remap produced alternating empty cells = "spikes").
         gx = col
         gz = row
-        # vertical column: rise obstacle_height cells from the floor (bottom rows)
+        # vertical column: rise obstacle_height cells from the floor (bottom rows).
+        # Dilate the leaf into a small block (radius 1) so max-depth (1-cell)
+        # leaves render as solid obstacles, not 1-voxel spikes.
         for gy in 1:obstacle_height
-            grid[gx, gy, gz] = w
+            for dz in -1:1, dx in -1:1
+                ix = clamp(gx + dx, 1, d)
+                iz = clamp(gz + dz, 1, d)
+                grid[ix, gy, iz] = w
+            end
         end
     end
     nothing
@@ -349,9 +355,15 @@ function _project_qt_to_grid!(grid,
         col = (li - 1) ÷ d + 1            # original component 1 (X / col)
         gx = col                          # identity mapping
         gz = row
-        # vertical column: fill obstacle_height cells from the floor
+        # vertical column: fill obstacle_height cells from the floor.
+        # Dilate the leaf into a small block (radius 1) so max-depth (1-cell)
+        # leaves render as solid obstacles, not 1-voxel spikes.
         for gy in 1:obstacle_height
-            grid[gx, gy, gz] = w
+            for dz in -1:1, dx in -1:1
+                ix = clamp(gx + dx, 1, d)
+                iz = clamp(gz + dz, 1, d)
+                grid[ix, gy, iz] = w
+            end
         end
     end
     nothing
@@ -365,11 +377,51 @@ Direct quadtree → GPU grid path: packs `qt.leaves` into flat
 the `_project_qt_to_grid_kernel!` to write straight into
 `r.grid_material`. No intermediate dense `d×d` CPU matrix.
 """
+
+"""
+    draw_room_enclosure!(mat, d; floor_y=2, room_half=d÷2-4, max_height=d÷2)
+
+Fill `mat` (a `d×d×d` grid) with the room's static geometry, mirroring
+`render_cross` in the notebook: a 1-voxel floor slab plus the back/left/right
+walls (the near wall is left open so the camera at z = -room_half can see in).
+The floor spans the full room footprint; the walls rise `max_height` from the
+floor slab.
+"""
+function draw_room_enclosure!(mat, d::Int;
+                              floor_y::Int = 2,
+                              room_half::Int = d ÷ 2 - 4,
+                              max_height::Int = d ÷ 2)
+    mid = d ÷ 2
+    lo = mid - room_half
+    hi = mid + room_half
+    # (a) floor slab (1 voxel thick at the bottom of the room)
+    @inbounds for gz in lo:hi, gx in lo:hi
+        mat[gx, floor_y, gz] = 1.0f0
+    end
+    # (b) back (z=hi), left (x=lo), right (x=hi) walls; near wall (z=lo) open
+    for gy in floor_y:(floor_y + max_height), i in lo:hi
+        @inbounds begin
+            mat[lo, gy, i] = 1.0f0   # left wall
+            mat[hi, gy, i] = 1.0f0   # right wall
+            mat[i, gy, hi] = 1.0f0   # back wall
+        end
+    end
+    nothing
+end
+
 function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     d = grid_res(r)
     lv = qt.leaves
     n = pack_leaf_cells!(r.pack_inds, r.pack_wts, lv, d)
     r.pack_n = n
+    # Room enclosure (floor + back/left/right walls), independent of the
+    # sampled leaves.  Clear first so repeated writes don't accumulate.
+    mat = r.grid_material
+    (mat isa CuArray) && (mat .= 0.0f0)
+    (mat isa Array) && fill!(mat, 0.0f0)
+    host = (mat isa Array) ? mat : Array(mat)
+    draw_room_enclosure!(host, d)
+    (mat isa CuArray) && copyto!(mat, host)
     if r.grid_material isa CuArray
         # GPU: upload the used prefix (bulk H2D), then run the device kernel.
         # pack_inds/pack_wts are dense host Vectors of capacity d*d; resize!
