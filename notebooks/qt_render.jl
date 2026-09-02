@@ -319,7 +319,7 @@ end
 function mytest()
     r = load_room(1)
 
-    d = grid_dim = 2 * maximum(steps(r))
+    d = grid_dim = 128
   
     mid = d ÷ 2
     room_half = d ÷ 2 - 4
@@ -358,6 +358,9 @@ end
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
 mytest()
 
+# ╔═╡ d06d005d-7978-4cd5-919b-b0a831c04ce8
+
+
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
 # ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
@@ -373,3 +376,4 @@ mytest()
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
 # ╠═8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
+# ╠═d06d005d-7978-4cd5-919b-b0a831c04ce8

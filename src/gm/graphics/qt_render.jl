@@ -310,9 +310,16 @@ function _project_qt_to_grid_kernel!(grid,
         w == 0.0f0 && return nothing
         col = ((li - 1) % d) + 1
         row = (li - 1) ÷ d + 1
+        # quadtree cell (col,row) ∈ [1,d]² lives in its own compact space
+        # [-0.5, 0.5]² (size 1/d). Map it to the renderer world grid, which
+        # spans [-d/2, d/2] per axis (grid index = world, voxel_dx=1):
+        qx = (col - 0.5) / d - 0.5          # quadtree x ∈ [-0.5, 0.5]
+        qz = (row - 0.5) / d - 0.5
+        gx = clamp(round(Int, qx * d) + d ÷ 2 + 1, 1, d)
+        gz = clamp(round(Int, qz * d) + d ÷ 2 + 1, 1, d)
         # vertical column: rise obstacle_height cells from the floor (bottom rows)
         for gy in 1:obstacle_height
-            grid[col, gy, row] = w
+            grid[gx, gy, gz] = w
         end
     end
     nothing
@@ -333,9 +340,13 @@ function _project_qt_to_grid!(grid,
         w == 0.0f0 && continue
         col = ((li - 1) % d) + 1
         row = (li - 1) ÷ d + 1
-        # vertical column: fill all y at this (gx, gz)
+        qx = (col - 0.5) / d - 0.5          # quadtree x ∈ [-0.5, 0.5]
+        qz = (row - 0.5) / d - 0.5
+        gx = clamp(round(Int, qx * d) + d ÷ 2 + 1, 1, d)
+        gz = clamp(round(Int, qz * d) + d ÷ 2 + 1, 1, d)
+        # vertical column: fill obstacle_height cells from the floor
         for gy in 1:obstacle_height
-            grid[col, gy, row] = w
+            grid[gx, gy, gz] = w
         end
     end
     nothing
@@ -438,8 +449,11 @@ function recompute_bbox!(r::QuadTreeRenderer)
         li = r.pack_inds[i]
         col = (li - 1) % d + 1
         row = (li - 1) ÷ d + 1
-        x = (col - 1 - d÷2) * dx
-        y = (row - 1 - d÷2) * dx
+        # same quadtree→renderer-world mapping as _project_qt_to_grid!
+        x = clamp(round(Int, ((col - 0.5) / d - 0.5) * d) + d ÷ 2 + 1, 1, d)
+        y = clamp(round(Int, ((row - 0.5) / d - 0.5) * d) + d ÷ 2 + 1, 1, d)
+        x = (x - 1 - d÷2) * dx
+        y = (y - 1 - d÷2) * dx
         # vertical column: the cell spans y in [0, obstacle_height] (floor to
         # obstacle top); world z-extent comes from obstacle_height below.
         minx = min(minx, x); maxx = max(maxx, x + dx)
