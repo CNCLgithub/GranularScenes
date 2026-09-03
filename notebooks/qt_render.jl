@@ -333,23 +333,27 @@ function mytest()
     # cam_height slider (5..60) is world units; must stay < d÷2 (bbox top).
     cam_h       = min(cam_height, Float32(max_room_height - 2))
     cam_world_y = floor_world_y + cam_h
-    cam_world_z = Float32(-room_half + 2)
+    cam_world_z = Float32(mid+4)
     cam_world_x = 0.0f0
 
     pitch_rad   = deg2rad(Float32(cam_pitch))
-    target_dist = Float32(room_half * 2)
+    target_dist = Float32(-room_half * 2)
     target_x    = 0.0f0
     target_y    = cam_world_y + target_dist * tan(pitch_rad)
     target_z    = cam_world_z + target_dist
 
+
+    cam_pos = SVector{3,Float32}(cam_world_x, cam_world_y, cam_world_z)
+    look_at = SVector{3,Float32}(target_x, target_y, target_z)
+    
     params = QuadTreeModel(r;
         render_kwargs = Dict(
             :image_res       => (256, 256),
             :use_cuda        => false,
             :grid_res        => grid_dim,
             :obstacle_height => obs_h,
-            :camera_pos      => SVector{3,Float32}(cam_world_x, cam_world_y, cam_world_z),
-            :look_at         => SVector{3,Float32}(target_x, target_y, target_z),
+            :camera_pos      => cam_pos,
+            :look_at         => look_at,
             :fov             => Float32(cam_fov)))
 
     qt = QuadTree(quad_tree_prior(params.start_node, 1))
@@ -362,13 +366,13 @@ function mytest()
 
     
 
-    (params.renderer, depth_map_array(depth))
+    (params.renderer, cam_pos, look_at, depth_map_array(depth))
 end
 
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
 begin
-    renderer, depth = mytest();
+    renderer, cam_pos, look_at, depth = mytest();
     depth
 end
 
@@ -437,6 +441,49 @@ end
 # ╔═╡ 2f4fa50d-d1d5-4349-8411-3891b24ca0c5
 debug_occupancy_stats(renderer)   # numbers
 
+# ╔═╡ 18a26033-5434-4a70-96ea-2268d9d584db
+"""
+    debug_topdown_cam(r; cam_pos, look_at, marker_size=3)
+
+Top-down floor plan with the camera drawn in: `•` = camera position,
+`+` = look-at target, `·` = the view ray.  Removes the guesswork about
+orientation: the camera sits at display (col = x, row = z) since the
+displayed matrix is M[z, x] (row 1 = z=1 at top, col 1 = x=1 at left).
+"""
+function debug_topdown_cam(r::QuadTreeRenderer; cam_pos::Tuple{Real,Real,Real},
+                           look_at::Tuple{Real,Real,Real}, marker_size::Int = 3)
+    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
+    d = size(mat, 1)
+    mid = d ÷ 2
+    plan = dropdims(maximum(mat, dims = 2), dims = 2)'   # display M[z, x]
+
+    img = Gray.(clamp.(plan, 0.0f0, 1.0f0))
+    # world (x, z) → display (col = x + mid, row = z + mid); grid index =
+    # world + mid + 1, so world 0 lands at col/row mid+1.
+    cx, cz = round(Int, cam_pos[1]) + mid + 1, round(Int, cam_pos[3]) + mid + 1
+    tx, tz = round(Int, look_at[1]) + mid + 1, round(Int, look_at[3]) + mid + 1
+
+    paint!(q::Int, r_::Int) = begin
+        ok = 1 <= q <= d && 1 <= r_ <= d
+        ok && (img[q, r_] = Gray(0.5f0))
+        nothing
+    end
+    for du in -marker_size:marker_size, dv in -marker_size:marker_size
+        paint!(cz + du, cx + dv)   # camera: square blob
+    end
+    n = max(abs(tx - cx), abs(tz - cz))
+    n == 0 && return img
+    for s in 0:n                   # view ray toward the target
+        q = round(Int, cz + (tz - cz) * s / n)
+        r_ = round(Int, cx + (tx - cx) * s / n)
+        paint!(q, r_)
+    end
+    return img
+end
+
+# ╔═╡ 05654874-f6c2-4436-bd99-dc6eccaf9a7f
+debug_topdown_cam(renderer;cam_pos=Tuple(cam_pos), look_at=Tuple(look_at))
+
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
 # ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
@@ -448,6 +495,7 @@ debug_occupancy_stats(renderer)   # numbers
 # ╠═dcad0f17-d957-4a43-87c4-f1334be5b59b
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
 # ╠═5f309061-321a-412d-a1dd-f1da047568f4
+# ╠═05654874-f6c2-4436-bd99-dc6eccaf9a7f
 # ╠═d6108d2b-1d6d-4530-aafe-d2ee3b1c9c6e
 # ╟─a4186c8c-f1ad-479a-a5fc-5274b4344528
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
@@ -458,3 +506,4 @@ debug_occupancy_stats(renderer)   # numbers
 # ╠═96230e38-9edf-4fa5-ab2e-a80b699371cf
 # ╠═f5927a6a-566a-4d8e-af45-f6f530b8b9fa
 # ╠═57184b8c-e34b-4fbf-a870-02f795e1396e
+# ╠═18a26033-5434-4a70-96ea-2268d9d584db
