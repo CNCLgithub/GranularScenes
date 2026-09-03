@@ -233,6 +233,124 @@ end
 #   end
 #   depth += transmittance * total_distance
 #
+# C4.w: wall-extent DDA.  Same march as dda_voxel_march, but does NOT stop
+# when the ray leaves the voxel volume.  Instead it keeps the DDA clamped to
+# the AABB (so it walks "virtual" empty space beyond the grid), and if the ray
+# exits the far side of the volume without hitting solid voxels, reports a hit
+# AT THE FAR AABB FACE (the room's far wall) with the wall weight.  This lets
+# the volume extents act as the room's walls without explicit wall voxels.
+function dda_voxel_march_wall(material::AbstractArray{Float32,3},
+                              bbox::NTuple{6,Float32},
+                              voxel_inv_dx::Float32,
+                              voxel_dx::Float32,
+                              eye::NTuple{3,Float32},
+                              ray_dir::NTuple{3,Float32};
+                              wall_weight::Float32 = 1.0f0)
+    n = size(material, 1)
+    dir = (abs(ray_dir[1]) < 1.0f-6 ? 1.0f-6 : ray_dir[1],
+           abs(ray_dir[2]) < 1.0f-6 ? 1.0f-6 : ray_dir[2],
+           abs(ray_dir[3]) < 1.0f-6 ? 1.0f-6 : ray_dir[3])
+    rinv = (1.0f0 / dir[1], 1.0f0 / dir[2], 1.0f0 / dir[3])
+    rsign = (dir[1] > 0 ? 1 : -1,
+             dir[2] > 0 ? 1 : -1,
+             dir[3] > 0 ? 1 : -1)
+
+    bmin = (bbox[1], bbox[2], bbox[3])
+    bmax = (bbox[4], bbox[5], bbox[6])
+    t_near = -Inf32; t_far = Inf32; hits = true
+    for axis in 1:3
+        origin = eye[axis]; lo = bmin[axis]; hi = bmax[axis]; dc = dir[axis]
+        t1 = (lo - origin) / dc; t2 = (hi - origin) / dc
+        t_near = max(min(t1, t2), t_near)
+        t_far  = min(max(t1, t2), t_far)
+    end
+    if t_near > t_far
+        hits = false
+    end
+
+    hit_distance = Inf32
+    hit_weight = 0.0f0
+    hit_pos = (0.0f0, 0.0f0, 0.0f0)
+
+    if hits
+        t_entry = max(t_near, 0.0f0)
+        t_start = t_entry + 5 * EPS
+        pos = (eye[1] + dir[1] * t_start,
+               eye[2] + dir[2] * t_start,
+               eye[3] + dir[3] * t_start)
+        grid_pos = (voxel_inv_dx * pos[1], voxel_inv_dx * pos[2], voxel_inv_dx * pos[3])
+        voxel = (floor(Int, grid_pos[1]), floor(Int, grid_pos[2]), floor(Int, grid_pos[3]))
+
+        travel = ((voxel[1] - grid_pos[1] + 0.5f0 + rsign[1] * 0.5f0) * rinv[1],
+                  (voxel[2] - grid_pos[2] + 0.5f0 + rsign[2] * 0.5f0) * rinv[2],
+                  (voxel[3] - grid_pos[3] + 0.5f0 + rsign[3] * 0.5f0) * rinv[3])
+
+        # clamp the initial voxel into the volume (a ray that ENTERS the volume
+        # from outside can have a voxel index up to 1 cell outside the grid;
+        # clamp so the first sampled cell is the boundary cell of the volume)
+        n2 = n ÷ 2
+        voxel = (clamp(voxel[1], -n2, n2 - 1),
+                 clamp(voxel[2], -n2, n2 - 1),
+                 clamp(voxel[3], -n2, n2 - 1))
+
+        step = 0
+        tracing = true
+        while tracing
+            grid_index_x = voxel[1] + n2 + 1
+            grid_index_y = voxel[2] + n2 + 1
+            grid_index_z = voxel[3] + n2 + 1
+            inside = (1 <= grid_index_x <= n) && (1 <= grid_index_y <= n) && (1 <= grid_index_z <= n)
+            density = 0.0f0
+            if inside
+                density = clamp(material[grid_index_x, grid_index_y, grid_index_z], 0.0f0, 1.0f0)
+            end
+            if step > 0 && density > EPS
+                exit_travel = ((voxel[1] - grid_pos[1] + 0.5f0 - rsign[1] * 0.5f0) * rinv[1],
+                               (voxel[2] - grid_pos[2] + 0.5f0 - rsign[2] * 0.5f0) * rinv[2],
+                               (voxel[3] - grid_pos[3] + 0.5f0 - rsign[3] * 0.5f0) * rinv[3])
+                hit_distance = max(max(exit_travel[1], exit_travel[2]), exit_travel[3]) * voxel_dx + t_entry
+                hit_pos = (eye[1] + dir[1] * (hit_distance + 1.0f-3),
+                           eye[2] + dir[2] * (hit_distance + 1.0f-3),
+                           eye[3] + dir[3] * (hit_distance + 1.0f-3))
+                hit_weight = density
+                tracing = false
+            else
+                axis = (travel[1] <= travel[2] && travel[1] < travel[3]) ? 1 :
+                       (travel[2] <= travel[1] && travel[2] <= travel[3]) ? 2 : 3
+                travel = (travel[1] + (axis == 1 ? rsign[1] * rinv[1] : 0.0f0),
+                          travel[2] + (axis == 2 ? rsign[2] * rinv[2] : 0.0f0),
+                          travel[3] + (axis == 3 ? rsign[3] * rinv[3] : 0.0f0))
+                voxel = (voxel[1] + (axis == 1 ? rsign[1] : 0),
+                         voxel[2] + (axis == 2 ? rsign[2] : 0),
+                         voxel[3] + (axis == 3 ? rsign[3] : 0))
+                step += 1
+            end
+
+            # continue walking — but if we leave the volume (clamped voxel at
+            # the boundary going outward), stop and report the FAR AABB face.
+            outside = (voxel[1] < -n2) || (voxel[1] > n2 - 1) ||
+                      (voxel[2] < -n2) || (voxel[2] > n2 - 1) ||
+                      (voxel[3] < -n2) || (voxel[3] > n2 - 1)
+            if outside
+                if hit_distance == Inf32
+                    # never hit solid → hit the far side of the volume.
+                    # t_far is already the AABB-exit distance in ray units;
+                    # multiply by voxel_dx to get world distance (same scale
+                    # as the solid-hit exit_travel·voxel_dx + t_entry path).
+                    hit_distance = (t_far - t_entry) * voxel_dx + t_entry
+                    hit_pos = (eye[1] + dir[1] * (hit_distance + 1.0f-3),
+                               eye[2] + dir[2] * (hit_distance + 1.0f-3),
+                               eye[3] + dir[3] * (hit_distance + 1.0f-3))
+                    hit_weight = wall_weight
+                end
+                tracing = false
+            end
+        end
+    end
+
+    (hit_distance, hit_weight, hit_pos)
+end
+
 # NOTE: dda_voxel_march returns dist=Inf32 on a miss. 0·Inf = NaN, so we must
 # treat a miss as "ray escaped": stop marching and return current depth.
 # ---------------------------------------------------------------------------
@@ -243,14 +361,17 @@ function accumulate_depth(material::AbstractArray{Float32,3},
                           voxel_inv_dx::Float32,
                           voxel_dx::Float32,
                           eye::NTuple{3,Float32},
-                          dir::NTuple{3,Float32})
+                          dir::NTuple{3,Float32};
+                          wall_mode::Bool = false)
     pos = eye
     total_distance = 0.0f0
     transmittance = 1.0f0
     depth = 0.0f0
     bounce = 0
     while bounce < MAX_RAY_DEPTH && transmittance > EPS && total_distance < DIS_LIMIT
-        dist, w, new_pos = dda_voxel_march(material, bbox, voxel_inv_dx, voxel_dx, pos, dir)
+        dist, w, new_pos = wall_mode ?
+            dda_voxel_march_wall(material, bbox, voxel_inv_dx, voxel_dx, pos, dir) :
+            dda_voxel_march(material, bbox, voxel_inv_dx, voxel_dx, pos, dir)
         if !isfinite(dist)      # miss: escaped the density field
             break
         end
@@ -338,9 +459,11 @@ end
                                   fov::Float32,
                                   aspect::Float32,
                                   u::Int, v::Int,
-                                  image_h::Int)
+                                  image_h::Int;
+                                  wall_mode::Bool = false)
     dir = ray_direction(fwd, right, up_dir, fov, aspect, u, v, image_h)
-    accumulate_depth(material, bbox, voxel_inv_dx, voxel_dx, eye, dir)
+    accumulate_depth(material, bbox, voxel_inv_dx, voxel_dx, eye, dir;
+                     wall_mode = wall_mode)
 end
 
 # AK-parallel render (CPU Array or GPU CuArray, whichever is passed)
@@ -352,7 +475,8 @@ function render_pixels_ak!(depth_buffer,
                            eye::NTuple{3,Float32},
                            target::NTuple{3,Float32},
                            up::NTuple{3,Float32},
-                           fov::Float32)
+                           fov::Float32;
+                           wall_mode::Bool = false)
     image_h = size(depth_buffer, 2)
     image_w = size(depth_buffer, 1)
     aspect  = Float32(image_w) / image_h
@@ -364,7 +488,8 @@ function render_pixels_ak!(depth_buffer,
         u = ((I - 1) % image_w) + 1
         v = ((I - 1) ÷ image_w) + 1
         depth = pixel_accumulate(material, bbox, voxel_inv_dx, voxel_dx, eye,
-                                 fwd, right, up_dir, fov, aspect, u, v, image_h)
+                                 fwd, right, up_dir, fov, aspect, u, v, image_h;
+                                 wall_mode = wall_mode)
         depth_buffer[I] = depth
     end
     depth_buffer

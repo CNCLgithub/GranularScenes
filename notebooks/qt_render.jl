@@ -333,7 +333,7 @@ function mytest()
     # cam_height slider (5..60) is world units; must stay < d÷2 (bbox top).
     cam_h       = min(cam_height, Float32(max_room_height - 2))
     cam_world_y = floor_world_y + cam_h
-    cam_world_z = Float32(mid+4)
+    cam_world_z = Float32(d-2)
     cam_world_x = 0.0f0
 
     pitch_rad   = deg2rad(Float32(cam_pitch))
@@ -347,9 +347,11 @@ function mytest()
     look_at = SVector{3,Float32}(target_x, target_y, target_z)
     
     params = QuadTreeModel(r;
+                           pixel_var = 0.001,
         render_kwargs = Dict(
             :image_res       => (256, 256),
-            :use_cuda        => false,
+            :use_cuda        => true,
+            :wall_mode       => true,
             :grid_res        => grid_dim,
             :obstacle_height => obs_h,
             :camera_pos      => cam_pos,

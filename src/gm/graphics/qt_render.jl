@@ -63,6 +63,7 @@ mutable struct QuadTreeRenderer{MA<:AbstractArray, MFA<:AbstractArray}
     up::SVector{3,Float32}
     fov::Float32
     floor_height::Float32
+    wall_mode::Bool              # true → DDA wall-extent mode (exit = far-wall hit)
     light_direction::SVector{3,Float32}
     light_direction_noise::Float32
 end
@@ -96,6 +97,7 @@ function QuadTreeRenderer(;grid_res::Int = 128,
                           camera_pos::SVector{3,Float32} = SVector(0.4f0, 40.0f0, 60.0f0),
                           fov::Float32 = 0.56f0,
                           look_at::SVector{3, Float32} = SVector(0.0f0, -5.0f0, -60.0f0),
+                          wall_mode::Bool = false,
                           use_cuda::Bool = CUDA.functional())
     alloc = buffer_allocator(use_cuda)
     m = grid_res
@@ -129,6 +131,7 @@ function QuadTreeRenderer(;grid_res::Int = 128,
     oh = obstacle_height < 0 ? grid_res ÷ 6 : obstacle_height
     oh = min(oh, grid_res)          # clamp: never taller than the grid
     floor_height = 0.0f0
+    wall_mode = wall_mode
     light_direction = SVector{3,Float32}(0.0f0, 1.0f0, 0.0f0)
     light_direction_noise = 0.0f0
 
@@ -137,7 +140,7 @@ function QuadTreeRenderer(;grid_res::Int = 128,
                      depth_buffer, rendered, noise_buffer, bbox, rand_buffer,
                      leaf_inds, leaf_weights, max_cells,
                      pack_inds, pack_wts, 0,
-                     camera_pos, look_at, upv, fov, floor_height,
+                     camera_pos, look_at, upv, fov, floor_height, wall_mode,
                      light_direction, light_direction_noise)
 end
 
@@ -156,6 +159,10 @@ function set_up!(r::QuadTreeRenderer, x::Real, y::Real, z::Real)
 end
 function set_fov!(r::QuadTreeRenderer, f::Real)
     r.fov = Float32(f)
+    nothing
+end
+function set_wall_mode!(r::QuadTreeRenderer, w::Bool)
+    r.wall_mode = w
     nothing
 end
 function set_directional_light!(r::QuadTreeRenderer, direction::NTuple{3,Real},
@@ -430,7 +437,7 @@ function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     # c2=Y/row.  Julia column-major: occ[li] == occ[c2, c1] == occ[row, col].
     for x in lv
         w = weight(x)
-        w = w > 0.25f0 ? Float32(1) : 0.0f0
+        w = w > 0.025f0 ? Float32(w) : 0.0f0
         w == 0.0f0 && continue
         for li in node_to_idx(x.node, d)
             occ[li] = max(occ[li], w)   # union, not overwrite
@@ -499,7 +506,8 @@ function render!(r::QuadTreeRenderer)
     # AK-parallel depth render into the (w,h,1) buffer (no views — AK
     # kernels over SubArrays of CuArrays fall back to scalar indexing)
     render_pixels_ak!(r.depth_buffer, r.grid_material, bbox_t,
-                      r.voxel_inv_dx, r.voxel_dx, eye, target, upv, r.fov)
+                      r.voxel_inv_dx, r.voxel_dx, eye, target, upv, r.fov;
+                      wall_mode = r.wall_mode)
 
     # depth → [0,1] image (linear indexing is agnostic to the trailing 1-dim)
     normalize_depth!(r.rendered, r.depth_buffer)
