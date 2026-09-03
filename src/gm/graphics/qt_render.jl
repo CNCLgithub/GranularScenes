@@ -430,7 +430,7 @@ function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     # c2=Y/row.  Julia column-major: occ[li] == occ[c2, c1] == occ[row, col].
     for x in lv
         w = weight(x)
-        w = w > 0.025f0 ? Float32(w) : 0.0f0
+        w = w > 0.25f0 ? Float32(1) : 0.0f0
         w == 0.0f0 && continue
         for li in node_to_idx(x.node, d)
             occ[li] = max(occ[li], w)   # union, not overwrite
