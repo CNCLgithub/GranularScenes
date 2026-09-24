@@ -423,7 +423,6 @@ end
 
 function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     d = grid_res(r)
-    lv = qt.leaves
     # Floor-plan extrusion: build a dense d×d occupancy (leaf weights) on the
     # host from the full leaf footprints (project_qt! semantics), then extrude
     # it up through the obstacle-height column range.  This guarantees solid,
@@ -433,17 +432,9 @@ function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     # The floor plan also carries the room enclosure (floor footprint +
     # walls in 2-D), so we draw the enclosure into the same matrix first.
     occ = zeros(Float32, d, d)
-    # node_to_idx returns linear indices li = (c1-1)*d + c2 with c1=X/col,
-    # c2=Y/row.  Julia column-major: occ[li] == occ[c2, c1] == occ[row, col].
-    for x in lv
-        w = weight(x)
-        w = w > 0.025f0 ? Float32(w) : 0.0f0
-        w == 0.0f0 && continue
-        for li in node_to_idx(x.node, d)
-            occ[li] = max(occ[li], w)   # union, not overwrite
-        end
-    end
 
+    # TODO: update new `write_obstacles!`
+    
     mat = r.grid_material
     (mat isa CuArray) && (mat .= 0.0f0)
     (mat isa Array) && fill!(mat, 0.0f0)

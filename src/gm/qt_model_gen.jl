@@ -22,11 +22,11 @@ end
     w  ~ beta(kappa*mean, kappa*(1-mean))
 end
 
-function bind_weights(g::GranularitySchema, weights)::QuadTree
+function bind_weights(g::QTSchema, weights)::QuadTree
     QuadTree(g, Dict{NodeId, Float64}(zip(g.leaves, weights)))
 end
 
-@gen (static) function map_occupancy_weights(g::GranularitySchema,
+@gen (static) function map_occupancy_weights(g::QTSchema,
                                              p::QTVisionPrior)
     # 1. extract leaf nodes
     leaves = g.leaves
@@ -36,7 +36,7 @@ end
     return qt
 end
 
-@gen (static) function qt_vision(g::GranularitySchema,
+@gen (static) function qt_vision(g::QTSchema,
                                  p::QTVisionPrior,
                                  l::QTVisionLikelihood)
     qt ~ map_occupancy_weights(g, p)

@@ -345,21 +345,21 @@ function mytest()
 
     cam_pos = SVector{3,Float32}(cam_world_x, cam_world_y, cam_world_z)
     look_at = SVector{3,Float32}(target_x, target_y, target_z)
-    
-    params = QuadTreeModel(r;
-                           pixel_var = 0.001,
-        render_kwargs = Dict(
-            :image_res       => (256, 256),
-            :use_cuda        => true,
-            :wall_mode       => true,
-            :grid_res        => grid_dim,
-            :obstacle_height => obs_h,
-            :camera_pos      => cam_pos,
-            :look_at         => look_at,
-            :fov             => Float32(cam_fov)))
 
-    qt = QuadTree(quad_tree_prior(params.start_node, 1))
-    @time depth = qt_observe(params.renderer, qt, params.pixel_var)
+    pixel_var = Float32(.001)
+    renderer = QuadTreeRenderer(;
+            image_res       = (256, 256),
+            use_cuda        = true,
+            wall_mode       = true,
+            grid_res        = grid_dim,
+            obstacle_height = obs_h,
+            camera_pos      = cam_pos,
+            look_at         = look_at,
+            fov             = Float32(cam_fov)
+                               )
+
+    qt = QuadTree(3, 4)
+    @time depth = qt_observe(renderer, qt, pixel_var)
 
     
  
@@ -377,6 +377,9 @@ begin
     renderer, cam_pos, look_at, depth = mytest();
     depth
 end
+
+# ╔═╡ e05eb6a9-df27-46a0-92a1-f34acb45418f
+
 
 # ╔═╡ 96230e38-9edf-4fa5-ab2e-a80b699371cf
 # Debug visualizers for the renderer's obstacle buffer (`grid_material`).
@@ -503,6 +506,7 @@ debug_topdown_cam(renderer;cam_pos=Tuple(cam_pos), look_at=Tuple(look_at))
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
 # ╠═8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
+# ╠═e05eb6a9-df27-46a0-92a1-f34acb45418f
 # ╠═95103afa-e049-4088-b2ee-c6cdc65180a0
 # ╠═2f4fa50d-d1d5-4349-8411-3891b24ca0c5
 # ╠═96230e38-9edf-4fa5-ab2e-a80b699371cf

@@ -1,4 +1,4 @@
-export QuadTree, NodeId, GranularitySchema
+export QuadTree, NodeId, QTSchema
 
 include("spatial_primitives.jl")
 
@@ -124,6 +124,24 @@ function QuadTree(max_level::Int, μ₀::Float64)
                       [root])
     QuadTree(schema, Dict{NodeId,Float64}(root => μ₀))
 end
+
+"""
+    QuadTree(cur_depth::Int, max_level::Int)
+
+Complete quadtree whose leaves are all exactly at depth `cur_depth`
+(the 4^(cur_depth-1) cells of the uniform grid at that depth), each with
+random weight. `cur_depth ≤ max_level` must hold.
+"""
+function QuadTree(cur_depth::Int, max_level::Int)
+    1 <= cur_depth <= max_level ||
+        throw(ArgumentError("cur_depth=$cur_depth out of 1..max_level=$max_level"))
+    n_cells = 4^(cur_depth - 1)
+    leaves = [NodeId(UInt8(cur_depth), UInt32(m)) for m in 0:n_cells-1]
+    schema = QTSchema(max_level, AABB2D(SVector(-0.5, -0.5), SVector(0.5, 0.5)), leaves)
+    weight_map = Dict{NodeId,Float64}(zip(leaves, rand(n_cells)))
+    QuadTree(schema, weight_map)
+end
+
 
 """
     validate(qt) -> (ok::Bool, msg::String)

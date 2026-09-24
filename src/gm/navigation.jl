@@ -148,7 +148,7 @@ function adjacent_leaves!(out::Vector{NodeId}, qt::QuadTree, n::NodeId)
     L = finest_grid(qt)
     x, y = node_xy(n)
     sz = leaf_cells_per_side(qt, n)
-    stack = Vector{NTuple{3, Int64}}(undef, 3 * max_level(qt)))
+    stack = Vector{NTuple{3, Int64}}(undef, 3 * max_level(qt))
     cnt = 0
     for dir in 1:4                  # 1: −x  2: +x  3: −y  4: +y
         bx, by = dir == 1 ? (x*sz - 1, y*sz) :
