@@ -13,6 +13,12 @@ function Gen.random(::QTObserve, r::QuadTreeRenderer, qt::QuadTree, var::Float32
     Array(sampled)
 end
 
+function Gen.random(::QTObserve, r::QuadTreeRenderer, room::GridRoom, var::Float32)
+    write_obstacles!(r, room)
+    sampled = random(r, var)
+    Array(sampled)
+end
+
 function Gen.logpdf(::QTObserve, x::Array{Float32}, r::QuadTreeRenderer, qt::QuadTree, var::Float32)
     write_obstacles!(r, qt)
     ls = logpdf(r, x, var)

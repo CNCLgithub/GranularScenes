@@ -50,3 +50,13 @@ function write_obstacles!(occ::Matrix{Float32}, qt::QuadTree, d::Int;
     end
     return occ
 end
+
+function write_obstacles!(m::Matrix{Float32}, gr::GridRoom, d::Int;
+                          buf::Vector{Int64} = Int64[], threshold::Float32 = 0.025f0)
+    dmat = data(gr)
+    size(dmat) == size(m) || throw(ArgumentError("Size missmatch"))
+    for i = eachindex(m)
+        m[i] = dmat[i] == obstacle_tile
+    end
+    return nothing
+end

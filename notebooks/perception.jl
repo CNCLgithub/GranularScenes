@@ -262,8 +262,8 @@ function mytest()
             fov             = Float32(cam_fov)
                                )
 
-    qt = QuadTree(3, 4)
-    depth = qt_observe(renderer, qt, pixel_var)
+
+    depth = qt_observe(renderer, r, pixel_var)
     gt_depth = depth_map_array(depth)
 
     @show debug_occupancy_stats(renderer)
@@ -271,16 +271,18 @@ function mytest()
     
     vision_prior = QTVisionPrior()
     vision_obsm  = QTVisionLikelihood(renderer, pixel_var)
-
+    qt = QuadTree(4, 5)
+    
     vision_prot = AdaptiveMH(;
                             model = qt_vision,
                             model_args = (qt.schema, vision_prior, vision_obsm),
                             obs = cm,
+                             chain_length = 1000,
                             )
 
     vision_module = PerceptionModule(vision_prot, cm)
 
-    @time for _ = 1:1000
+    @time for _ = 1:100
         step_module!(vision_module)
     end
 

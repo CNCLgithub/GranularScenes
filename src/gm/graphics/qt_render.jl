@@ -384,15 +384,6 @@ function _project_qt_to_grid!(grid,
 end
 
 """
-    write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
-
-Direct quadtree → GPU grid path: packs `qt.leaves` into flat
-(cell_index, weight) arrays on the host, uploads them, then runs
-the `_project_qt_to_grid_kernel!` to write straight into
-`r.grid_material`. No intermediate dense `d×d` CPU matrix.
-"""
-
-"""
     draw_room_enclosure!(mat, d; floor_y=2, room_half=d÷2-4, max_height=d÷2)
 
 Fill `mat` (a `d×d×d` grid) with the room's static geometry, mirroring
@@ -428,7 +419,8 @@ function draw_room_enclosure!(mat, d::Int;
     nothing
 end
 
-function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
+function write_obstacles!(r::QuadTreeRenderer,
+                          src::Union{QuadTree, GridRoom})
     d = grid_res(r)
 
     # Floor-plan extrusion: build a dense d×d occupancy (leaf weights) on the
@@ -441,7 +433,7 @@ function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     # occ[x, z] (column-major, x first). occ is indexed [gx, gz] below to
     # match — do not transpose.
     occ = r.occ
-    write_obstacles!(occ, qt, d; buf = r.occ_buf)   # helper clears occ itself
+    write_obstacles!(occ, src, d; buf = r.occ_buf)   # helper clears occ itself
 
     mat = r.grid_material
     (mat isa CuArray) && (mat .= 0.0f0)
