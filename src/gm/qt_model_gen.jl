@@ -4,22 +4,25 @@ export qt_vision
 # Generative Model
 #################################################################################
 
-function node_lambda(params::QTVisionPrior, depth::Int)
+function node_lambda(params::QTVisionPrior, node::NodeId)
+    depth = Int64(node.depth)
     l_min, l_0 = params.lambda_min, params.lambda_0
     lambda = l_min + (l_0 - l_min)^(depth - 1)
 end
 
-function node_kappa(params::QTVisionPrior, depth::Int)
-    params.k_0 * exp2(depth - 1)
+function node_kappa(params::QTVisionPrior, node::NodeId)
+    depth = Int64(node.depth)
+    params.k0 * exp2(depth - 1)
 end
 
 @gen (static) function occupancy_prior(node, params::QTVisionPrior)
     # how deep are we? 
-    lambda = node_lambda(params, node.level)
-    kappa = node_kappa(params, node.level)
+    lambda = node_lambda(params, node)
+    kappa = node_kappa(params, node)
 
     mean ~ beta(lambda, lambda)
     w  ~ beta(kappa*mean, kappa*(1-mean))
+    return w
 end
 
 function bind_weights(g::QTSchema, weights)::QuadTree

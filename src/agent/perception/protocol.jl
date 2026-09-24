@@ -1,5 +1,6 @@
 export AdaptiveMH,
-    AMHChain
+    AMHChain,
+    maximum_aposteriori
 
 @kwdef struct AdaptiveMH <: PerceptionProtocol
 
@@ -34,29 +35,33 @@ function AMHChain(proc::AdaptiveMH,
     end
     
     # Sample initial trace
-    trace = Gen.simulate(proc.model,
-                         proc.model_args,
-                         constraints)
+    trace, _ = Gen.generate(proc.model,
+                            proc.model_args,
+                            constraints)
 
     # Store in chain
-    T = typeof{trace}
+    T = QTVisionTrace
     samples = CircularBuffer{T}(proc.chain_length)
     push!(samples, trace)
 
     weights = CircularBuffer{Float64}(proc.chain_length)
     push!(weights, 1.0)
 
-    AMHChain(samples, weights)
+    AMHChain{T}(samples, weights)
 end
 
-function step_module!(perception::MentalModule{V<:AdaptiveMH})
+function PerceptionModule(prot::AdaptiveMH, obs::ChoiceMap)
+    MentalModule(prot, AMHChain(prot, obs))
+end
+
+function step_module!(perception::MentalModule{<:AdaptiveMH})
 
     proc, state = mparse(perception)
 
     # Pre-attentive scene processing
     for _ = 1:proc.rw_budget
         trace = state.samples[end]
-        selected = select_uniform(trace)
+        selected = select_node_uniform(trace)
         new_trace, w, _... = regenerate(trace, selected)
 
         # MH acceptance function
@@ -68,4 +73,10 @@ function step_module!(perception::MentalModule{V<:AdaptiveMH})
         end
     end
     return nothing
+end
+
+function maximum_aposteriori(perception::MentalModule{<:AdaptiveMH})
+    proc, state = mparse(perception)
+    idx = argmax(state.weights)
+    state.samples[idx]
 end

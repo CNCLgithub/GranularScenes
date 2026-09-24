@@ -17,6 +17,7 @@ export save_img_array,
 #     Base.to_index(collect(T, i))
 # end
 
+include("circ_buffer.jl")
 
 #################################################################################
 # Visuals

@@ -1,3 +1,11 @@
+export MentalProtocol,
+    MentalState,
+    mparse,
+    PerceptionProtocol,
+    PlanningProtocol,
+    AttentionProtocol,
+    Agent,
+    step_module!
 
 "The algorithmic implementation of a mental process"
 abstract type MentalProtocol end
@@ -13,7 +21,9 @@ mutable struct MentalModule{T<:MentalProtocol}
     state::MentalState{T}
 end
 
-mparse(m::MentalModule{T})::Tuple{T, MentalState{T}} where {T} = (m.protocol, m.state)
+function mparse(m::MentalModule{T})::Tuple{T, MentalState{T}} where {T}
+    (m.protocol, m.state)
+end
 
 "Converts sensory signals to representations of the world"
 abstract type PerceptionProtocol <: MentalProtocol end
@@ -26,6 +36,8 @@ abstract type AttentionProtocol <: MentalProtocol end
 # abstract type PlanningModule{T<:PlanningProtocol} <:MentalModule{T} end
 # abstract type AttentionModule{T<:AttentionProtocol} <:MentalModule{T} end
 
+function step_module! end
+
 mutable struct Agent{V<:PerceptionProtocol,
                      P<:PlanningProtocol,
                      A<:AttentionProtocol}
@@ -36,3 +48,5 @@ mutable struct Agent{V<:PerceptionProtocol,
     "What to attend to in the world"
     attention::MentalModule{A}
 end
+
+include("perception/perception.jl")

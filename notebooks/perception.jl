@@ -70,9 +70,6 @@ cm-editor .cm-scroller,
 </style>
 """
 
-# ╔═╡ 57167279-c0a5-46c0-9044-e885faa75178
-
-
 # ╔═╡ 20aaf2ed-350d-4585-aa12-6fc010d67bd2
 @bind cam_height Slider(10.0:1.0:100.0, default=50.0, show_value=true)
 
@@ -205,6 +202,24 @@ function load_room(idx::Int)
     from_json(GridRoom, base_s)
 end
 
+# ╔═╡ 57184b8c-e34b-4fbf-a870-02f795e1396e
+"""
+    debug_occupancy_stats(r::QuadTreeRenderer)
+
+Counts of occupied voxels and per-slab occupancy (how many cells are filled at
+each gy) — quick numeric confirmation that the buffer is being filled.
+"""
+function debug_occupancy_stats(r::QuadTreeRenderer)
+    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
+    d = size(mat, 1)
+    occ = count(!iszero, mat)
+    per_gy = [count(!iszero, @view mat[:, gy, :]) for gy in 1:d]
+    top = findlast(!iszero, per_gy)
+    return (occupied = occ, fraction = occ / (d^3),
+            top_gy = top === nothing ? 0 : top,
+            max_gy = maximum(per_gy), argmax_gy = argmax(per_gy))
+end
+
 # ╔═╡ 67bb0b77-f540-480a-aa42-0188d0df1ca4
 function mytest()
     r = load_room(1)
@@ -235,165 +250,70 @@ function mytest()
     cam_pos = SVector{3,Float32}(cam_world_x, cam_world_y, cam_world_z)
     look_at = SVector{3,Float32}(target_x, target_y, target_z)
     
-    params = QuadTreeModel(r;
-                           pixel_var = 0.001,
-        render_kwargs = Dict(
-            :image_res       => (256, 256),
-            :use_cuda        => true,
-            :wall_mode       => true,
-            :grid_res        => grid_dim,
-            :obstacle_height => obs_h,
-            :camera_pos      => cam_pos,
-            :look_at         => look_at,
-            :fov             => Float32(cam_fov)))
+    pixel_var = Float32(.001)
+    renderer = QuadTreeRenderer(;
+            image_res       = (256, 256),
+            use_cuda        = true,
+            wall_mode       = true,
+            grid_res        = grid_dim,
+            obstacle_height = obs_h,
+            camera_pos      = cam_pos,
+            look_at         = look_at,
+            fov             = Float32(cam_fov)
+                               )
 
-    qt = QuadTree(quad_tree_prior(params.start_node, 1))
-    @time depth = qt_observe(params.renderer, qt, params.pixel_var)
+    qt = QuadTree(3, 4)
+    depth = qt_observe(renderer, qt, pixel_var)
+    gt_depth = depth_map_array(depth)
 
+    @show debug_occupancy_stats(renderer)
+    cm = choicemap(:depth => depth)
     
- 
+    vision_prior = QTVisionPrior()
+    vision_obsm  = QTVisionLikelihood(renderer, pixel_var)
 
-    @show params.renderer.bbox
+    vision_prot = AdaptiveMH(;
+                            model = qt_vision,
+                            model_args = (qt.schema, vision_prior, vision_obsm),
+                            obs = cm,
+                            )
 
-    
+    vision_module = PerceptionModule(vision_prot, cm)
 
-    (params.renderer, cam_pos, look_at, depth_map_array(depth))
+    @time for _ = 1:1000
+        step_module!(vision_module)
+    end
+
+    map_trace = maximum_aposteriori(vision_module)
+    map_trace, _... = Gen.regenerate(map_trace, select(:depth))
+    map_depth = depth_map_array(map_trace[:depth])
+
+    (renderer, gt_depth, map_depth)
 end
 
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
-begin
-    renderer, cam_pos, look_at, depth = mytest();
-    depth
-end
+renderer, gt_depth, map_depth = mytest();
 
-# ╔═╡ 96230e38-9edf-4fa5-ab2e-a80b699371cf
-# Debug visualizers for the renderer's obstacle buffer (`grid_material`).
-# Paste into notebooks/qt_render.jl after a `write_obstacles!(r, qt)` call.
-# Shows the buffer directly (orthographic projections), independent of the
-# ray marcher, so you can confirm the buffer is filled as expected.
+# ╔═╡ 290f6e10-8b16-4646-86bf-9d79d9831919
+gt_depth
 
-"""
-    debug_topdown(r::QuadTreeRenderer)
-
-Top-down orthographic view of the obstacle buffer: maximum intensity over the
-vertical axis (dim 2), giving the floor plan `(x, z)` plane.
-"""
-function debug_topdown(r::QuadTreeRenderer)
-    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
-    top_down = dropdims(maximum(mat, dims = 2), dims = 2)   # (x, z)
-    @show size(top_down)
-    return Gray.(clamp.(top_down', 0.0f0, 1.0f0))            # (z, x) display
-end
-
-# ╔═╡ 5f309061-321a-412d-a1dd-f1da047568f4
-debug_topdown(renderer)           # floor plan
-
-# ╔═╡ f5927a6a-566a-4d8e-af45-f6f530b8b9fa
-"""
-    debug_sideview(r::QuadTreeRenderer; from_x = true)
-
-Side orthographic view of the obstacle buffer.  `from_x = true` projects along
-the lateral axis (dim 1) → the (z, y) elevation from the side.  `from_x =
-false` projects along z (dim 3) → the (x, y) elevation from the front.
-"""
-function debug_sideview(r::QuadTreeRenderer; from_x::Bool = true)
-    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
-    if from_x
-        side = dropdims(maximum(mat, dims = 1), dims = 1)    # (y, z)
-        return Gray.(clamp.(reverse(side, dims = 1)', 0.0f0, 1.0f0))  # (z, y), y up
-    else
-        side = dropdims(maximum(mat, dims = 3), dims = 3)    # (x, y)
-        return Gray.(clamp.(reverse(side, dims = 1)', 0.0f0, 1.0f0))  # (y, x), y up
-    end
-end
-
-# ╔═╡ 95103afa-e049-4088-b2ee-c6cdc65180a0
-debug_sideview(renderer)          # elevation from the side
-
-# ╔═╡ 57184b8c-e34b-4fbf-a870-02f795e1396e
-"""
-    debug_occupancy_stats(r::QuadTreeRenderer)
-
-Counts of occupied voxels and per-slab occupancy (how many cells are filled at
-each gy) — quick numeric confirmation that the buffer is being filled.
-"""
-function debug_occupancy_stats(r::QuadTreeRenderer)
-    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
-    d = size(mat, 1)
-    occ = count(!iszero, mat)
-    per_gy = [count(!iszero, @view mat[:, gy, :]) for gy in 1:d]
-    top = findlast(!iszero, per_gy)
-    return (occupied = occ, fraction = occ / (d^3),
-            top_gy = top === nothing ? 0 : top,
-            max_gy = maximum(per_gy), argmax_gy = argmax(per_gy))
-end
-
-# ╔═╡ 2f4fa50d-d1d5-4349-8411-3891b24ca0c5
-debug_occupancy_stats(renderer)   # numbers
-
-# ╔═╡ 18a26033-5434-4a70-96ea-2268d9d584db
-"""
-    debug_topdown_cam(r; cam_pos, look_at, marker_size=3)
-
-Top-down floor plan with the camera drawn in: `•` = camera position,
-`+` = look-at target, `·` = the view ray.  Removes the guesswork about
-orientation: the camera sits at display (col = x, row = z) since the
-displayed matrix is M[z, x] (row 1 = z=1 at top, col 1 = x=1 at left).
-"""
-function debug_topdown_cam(r::QuadTreeRenderer; cam_pos::Tuple{Real,Real,Real},
-                           look_at::Tuple{Real,Real,Real}, marker_size::Int = 3)
-    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
-    d = size(mat, 1)
-    mid = d ÷ 2
-    plan = dropdims(maximum(mat, dims = 2), dims = 2)'   # display M[z, x]
-
-    img = Gray.(clamp.(plan, 0.0f0, 1.0f0))
-    # world (x, z) → display (col = x + mid, row = z + mid); grid index =
-    # world + mid + 1, so world 0 lands at col/row mid+1.
-    cx, cz = round(Int, cam_pos[1]) + mid + 1, round(Int, cam_pos[3]) + mid + 1
-    tx, tz = round(Int, look_at[1]) + mid + 1, round(Int, look_at[3]) + mid + 1
-
-    paint!(q::Int, r_::Int) = begin
-        ok = 1 <= q <= d && 1 <= r_ <= d
-        ok && (img[q, r_] = Gray(0.5f0))
-        nothing
-    end
-    for du in -marker_size:marker_size, dv in -marker_size:marker_size
-        paint!(cz + du, cx + dv)   # camera: square blob
-    end
-    n = max(abs(tx - cx), abs(tz - cz))
-    n == 0 && return img
-    for s in 0:n                   # view ray toward the target
-        q = round(Int, cz + (tz - cz) * s / n)
-        r_ = round(Int, cx + (tx - cx) * s / n)
-        paint!(q, r_)
-    end
-    return img
-end
-
-# ╔═╡ 05654874-f6c2-4436-bd99-dc6eccaf9a7f
-debug_topdown_cam(renderer;cam_pos=Tuple(cam_pos), look_at=Tuple(look_at))
+# ╔═╡ 7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
+map_depth
 
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
 # ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
-# ╠═57167279-c0a5-46c0-9044-e885faa75178
 # ╟─df1e063b-08f7-4c22-a980-a756cac6c563
 # ╠═20aaf2ed-350d-4585-aa12-6fc010d67bd2
 # ╠═cff3abed-e02a-4918-80e4-3ebeba0fc59c
 # ╠═5e44a860-09b7-44fe-b805-bb50058a081c
 # ╠═dcad0f17-d957-4a43-87c4-f1334be5b59b
+# ╠═290f6e10-8b16-4646-86bf-9d79d9831919
+# ╠═7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
-# ╠═5f309061-321a-412d-a1dd-f1da047568f4
-# ╠═05654874-f6c2-4436-bd99-dc6eccaf9a7f
 # ╟─a4186c8c-f1ad-479a-a5fc-5274b4344528
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
 # ╠═8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
-# ╠═95103afa-e049-4088-b2ee-c6cdc65180a0
-# ╠═2f4fa50d-d1d5-4349-8411-3891b24ca0c5
-# ╠═96230e38-9edf-4fa5-ab2e-a80b699371cf
-# ╠═f5927a6a-566a-4d8e-af45-f6f530b8b9fa
 # ╠═57184b8c-e34b-4fbf-a870-02f795e1396e
-# ╠═18a26033-5434-4a70-96ea-2268d9d584db

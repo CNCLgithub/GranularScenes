@@ -81,6 +81,7 @@ end
 # convenience accessors ---------------------------------------------------------
 
 @inline max_level(qt::QuadTree) = qt.schema.max_level
+@inline nleaves(schema::QTSchema) = length(schema.leaves)
 @inline nleaves(qt::QuadTree) = length(qt.schema.leaves)
 @inline weight_of(qt::QuadTree, n::NodeId) = get(qt.weight_map, n, 0.0)
 

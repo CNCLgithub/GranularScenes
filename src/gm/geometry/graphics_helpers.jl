@@ -13,13 +13,16 @@ order. Returns the count.
 function leaf_lin_idxs!(buf::Vector{Int64}, qt::QuadTree, n::NodeId, d::Int)
     L = finest_grid(qt)
     f = d ÷ L
-    x, y = node_xy(n)
+    x, y = node_xy(n)                 # node-level coords at n.depth
     sz = leaf_cells_per_side(qt, n)
-    k = 0
-    for yf in (y+sz-1):-1:y                    # y descending
-        for xf in x:(x+sz-1)                   # x ascending
-            buf[k += 1] = (xf*f + 1 - 1)*d + (yf*f + 1)
-        end
+    x0 = x * sz                       # convert to finest-cell coords
+    y0 = y * sz
+    w  = sz * f                       # leaf side in render cells
+    k  = 0
+    for j in 0:(w-1), i in 0:(w-1)
+        c1 = x0 * f + i + 1           # render column (x)
+        c2 = y0 * f + j + 1           # render row (y)
+        buf[k += 1] = (c1 - 1) * d + c2
     end
     return k
 end
@@ -28,13 +31,13 @@ end
     write_obstacles!(occ, qt, d; threshold=0.025)
 
 Dense d×d occupancy fill. Union semantics (max) as in the renderer.
-`buf` must be preallocated with capacity ≥ 4·finest_grid(qt)^2 for safety,
-though a single leaf never covers more than sz² ≤ L² cells.
+`buf` must be preallocated with capacity ≥ d² for safety (a root leaf
+ covers the whole grid).
 """
 function write_obstacles!(occ::Matrix{Float32}, qt::QuadTree, d::Int;
                           buf::Vector{Int64} = Int64[], threshold::Float32 = 0.025f0)
     fill!(occ, 0.0f0)
-    maxbuf = finest_grid(qt)^2          # a single leaf covers at most L² cells
+    maxbuf = d * d                       # a root leaf covers the whole grid
     length(buf) < maxbuf && resize!(buf, maxbuf)
     for (i, n) in enumerate(qt.schema.leaves)
         w = qt.weight_map[n]
