@@ -6,6 +6,7 @@ module GranularScenes
 using Gen
 using Rooms
 using Graphs
+using Random
 using Parameters
 using StaticArrays
 using DocStringExtensions

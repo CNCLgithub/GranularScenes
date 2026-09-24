@@ -58,6 +58,10 @@ mutable struct QuadTreeRenderer{MA<:AbstractArray, MFA<:AbstractArray}
     pack_wts::Vector{Float32}
     pack_n::Int                  # number of used entries after last pack
 
+    # host-side preallocated dense floor-plan for write_obstacles!
+    occ::Matrix{Float32}         # d × d occupancy (leaf weights), reused every call
+    occ_buf::Vector{Int64}       # scratch for leaf_lin_idxs!, capacity d² ≥ finest_grid²
+
     camera_pos::SVector{3,Float32}   # host-side camera state (not GPU arrays; read once/frame)
     look_at::SVector{3,Float32}
     up::SVector{3,Float32}
@@ -115,6 +119,8 @@ function QuadTreeRenderer(;grid_res::Int = 128,
     max_cells = m * m
     pack_inds = Vector{Int32}(undef, max_cells)
     pack_wts = Vector{Float32}(undef, max_cells)
+    occ = zeros(Float32, m, m)
+    occ_buf = Vector{Int64}(undef, m * m)   # ≥ finest_grid(qt)^2 for any qt
     leaf_inds = use_cuda ? CuArray{Int32}(undef, max_cells) : Vector{Int32}(undef, max_cells)
     leaf_weights = use_cuda ? CuArray{Float32}(undef, max_cells) : Vector{Float32}(undef, max_cells)
 
@@ -140,6 +146,7 @@ function QuadTreeRenderer(;grid_res::Int = 128,
                      depth_buffer, rendered, noise_buffer, bbox, rand_buffer,
                      leaf_inds, leaf_weights, max_cells,
                      pack_inds, pack_wts, 0,
+                     occ, occ_buf,
                      camera_pos, look_at, upv, fov, floor_height, wall_mode,
                      light_direction, light_direction_noise)
 end
@@ -423,32 +430,34 @@ end
 
 function write_obstacles!(r::QuadTreeRenderer, qt::QuadTree)
     d = grid_res(r)
-    # Floor-plan extrusion: build a dense d×d occupancy (leaf weights) on the
-    # host from the full leaf footprints (project_qt! semantics), then extrude
-    # it up through the obstacle-height column range.  This guarantees solid,
-    # gap-free obstacle blocks — no per-cell dilation (the 3×3 hack caused
-    # neighbor thrash) and no weight clobbering between leaves.
-    #
-    # The floor plan also carries the room enclosure (floor footprint +
-    # walls in 2-D), so we draw the enclosure into the same matrix first.
-    occ = zeros(Float32, d, d)
 
-    # TODO: update new `write_obstacles!`
-    
+    # Floor-plan extrusion: build a dense d×d occupancy (leaf weights) on the
+    # host from the full leaf footprints (union semantics, threshold 0.025),
+    # then extrude it up through the obstacle-height column range. This
+    # guarantees solid, gap-free obstacle blocks — no per-cell dilation (the
+    # 3×3 hack caused neighbor thrash) and no weight clobbering between leaves.
+    #
+    # The dense helper fills occ[li] with li = (col-1)*d + row, i.e.
+    # occ[x, z] (column-major, x first). occ is indexed [gx, gz] below to
+    # match — do not transpose.
+    occ = r.occ
+    write_obstacles!(occ, qt, d; buf = r.occ_buf)   # helper clears occ itself
+
     mat = r.grid_material
     (mat isa CuArray) && (mat .= 0.0f0)
     (mat isa Array) && fill!(mat, 0.0f0)
     host = (mat isa Array) ? mat : Array(mat)
 
-    # Extrude the leaf footprint plane into the 3-D grid.  The enclosure
+    # Extrude the leaf footprint plane into the 3-D grid. The enclosure
     # (floor + walls + ceiling at ROOM height) is drawn afterwards by
     # draw_room_enclosure!, so occ only carries the sampled leaf weights.
-    # occ is column-major from node_to_idx (li = (c1-1)*d + c2), so reading
-    # occ[gz, gx] with gz=row, gx=col matches it exactly.
     oh = clamp(r.obstacle_height, 1, d)
-    for gy in 1:oh, gz in 1:d, gx in 1:d
-        o = occ[gz, gx]   # occ[row=z, col=x]
-        o == 0.0f0 || (host[gx, gy, gz] = o)
+    @inbounds for gz in 1:d, gx in 1:d
+        o = occ[gx, gz]                 # occ[x, z]
+        o == 0.0f0 && continue
+        for gy in 1:oh
+            host[gx, gy, gz] = o
+        end
     end
 
     # Enclosure (floor + walls + ceiling) is drawn by draw_room_enclosure!

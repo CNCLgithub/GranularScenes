@@ -361,14 +361,9 @@ function mytest()
     qt = QuadTree(3, 4)
     @time depth = qt_observe(renderer, qt, pixel_var)
 
-    
- 
+    @show renderer.bbox
 
-    @show params.renderer.bbox
-
-    
-
-    (params.renderer, cam_pos, look_at, depth_map_array(depth))
+    (renderer, cam_pos, look_at, depth_map_array(depth))
 end
 
 
@@ -377,9 +372,6 @@ begin
     renderer, cam_pos, look_at, depth = mytest();
     depth
 end
-
-# ╔═╡ e05eb6a9-df27-46a0-92a1-f34acb45418f
-
 
 # ╔═╡ 96230e38-9edf-4fa5-ab2e-a80b699371cf
 # Debug visualizers for the renderer's obstacle buffer (`grid_material`).
@@ -506,7 +498,6 @@ debug_topdown_cam(renderer;cam_pos=Tuple(cam_pos), look_at=Tuple(look_at))
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
 # ╠═8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
-# ╠═e05eb6a9-df27-46a0-92a1-f34acb45418f
 # ╠═95103afa-e049-4088-b2ee-c6cdc65180a0
 # ╠═2f4fa50d-d1d5-4349-8411-3891b24ca0c5
 # ╠═96230e38-9edf-4fa5-ab2e-a80b699371cf
