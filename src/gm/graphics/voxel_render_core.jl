@@ -17,8 +17,6 @@
 # C1: scalar vector math
 # ---------------------------------------------------------------------------
 
-using Random: randn!
-
 # normalize a 3-vector (NTuple{3,Float32} in/out)
 function normalize3(v::NTuple{3,Float32})
     inv_len = 1.0f0 / sqrt(v[1]^2 + v[2]^2 + v[3]^2)
