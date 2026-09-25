@@ -268,10 +268,10 @@ Map a `GridRoom` linear tile index (column-major over `steps(r)`, fast axis =
 """
 function room_index_to_point(r::GridRoom, i::Int)
     nr, nc = steps(r)
-    row = (i - 1) % nr + 1      # axis-1 index (fast)
-    col = (i - 1) ÷ nr + 1      # axis-2 index
+    col = (i - 1) % nr + 1      # axis-1 index (fast axis = column / x)
+    row = (i - 1) ÷ nr + 1      # axis-2 index
     SVector{2, Float64}((col - 0.5) / nc - 0.5,
-                        0.5 - (row - 0.5) / nr)   # flipped: row 1 → y ≈ +0.5
+                        0.5 - (row - 0.5) / nr)
 end
 
 """

@@ -84,6 +84,7 @@ end
 @inline nleaves(schema::QTSchema) = length(schema.leaves)
 @inline nleaves(qt::QuadTree) = length(qt.schema.leaves)
 @inline weight_of(qt::QuadTree, n::NodeId) = get(qt.weight_map, n, 0.0)
+@inline leaves(qt::QuadTree) = qt.schema.leaves
 
 "Finest cells per axis."
 @inline finest_grid(qt::QuadTree) = 1 << (max_level(qt) - 1)
