@@ -258,3 +258,35 @@ Maps a linear index in nxn to a R^2 plane [-0.5, 0.5]
 function idx_to_node_space(i::Int64, d::Int64)
     index_to_pos(GridTransform(d), i)
 end
+
+"""
+    room_index_to_point(r::GridRoom, i) -> SVector{2, Float64}
+
+Map a `GridRoom` linear tile index (column-major over `steps(r)`, fast axis =
+`steps[1]`) to node space [-0.5, 0.5]^2. Cell centers, matching
+`index_to_pos` semantics but with the room's own stride.
+"""
+function room_index_to_point(r::GridRoom, i::Int)
+    nr, nc = steps(r)
+    row = (i - 1) % nr + 1      # axis-1 index (fast)
+    col = (i - 1) ÷ nr + 1      # axis-2 index
+    SVector{2, Float64}((col - 0.5) / nc - 0.5,
+                        0.5 - (row - 0.5) / nr)   # flipped: row 1 → y ≈ +0.5
+end
+
+"""
+    room_index_to_qt(r::GridRoom, i, qt) -> Int
+
+Remap a `GridRoom` tile index onto the QT's finest grid: locate the tile
+center in node space, then re-linearize at stride `finest_grid(qt)`. Use this
+for anything fed to `AStarPlanner` / `qt_a_star` as a linear index.
+"""
+function room_index_to_qt(r::GridRoom, i::Int, qt::QuadTree)
+    L = finest_grid(qt)
+    p = room_index_to_point(r, i)
+    c = p .+ 0.5
+    col = clamp(ceil(Int, c[1] * L), 1, L)
+    row = clamp(ceil(Int, c[2] * L), 1, L)
+    (col - 1) * L + row
+end
+

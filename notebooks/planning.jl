@@ -34,6 +34,7 @@ begin
 	
 	using Revise
 	using GranularScenes
+	import GranularScenes as GS
 end
 
 
@@ -223,6 +224,11 @@ end
 # ╔═╡ 67bb0b77-f540-480a-aa42-0188d0df1ca4
 function mytest()
     r = load_room(1)
+
+    p = GS.room_index_to_point(r, first(entrance(r)))
+    println(GS.leaf_at(QuadTree(4, 5), p))   # should be a leaf at the room's left/mid edge
+
+    
     d = grid_dim = 16
 
     mid = d ÷ 2
@@ -283,8 +289,8 @@ function mytest()
     vision_module = PerceptionModule(vision_prot, cm)
 
     planning_prot = AStarPlanner(;
-                                ent = first(entrance(r)),
-                                ext = first(exits(r)),
+        ent = GS.room_index_to_qt(r, first(entrance(r)), qt),
+        ext = GS.room_index_to_qt(r, first(exits(r)), qt),
                                 nsamples = vision_prot.chain_length,
                                 )
     planning_module = PlanningModule(planning_prot)
