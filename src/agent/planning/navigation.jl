@@ -83,8 +83,12 @@ function qt_topdown(qt,
 
     img = Matrix{RGB{Float64}}(undef, d, d)
     max_w = max_w > 0 ? max_w : 1.0
-    for y in 1:d, x in 1:d
-        v = clamp(occ[y, x] / max_w, 0.0, 1.0)
+    # occ[li] is column-major with li=(x-1)*d + y: occ[x, y]. Julia displays
+    # the FIRST index vertically, and room_topdown shows the fast axis
+    # (steps[1], the room row) vertically -- so display row = y (c2, fast),
+    # column = x (c1, slow): img[y, x] = occ[x, y].
+    for x in 1:d, y in 1:d
+        v = clamp(occ[x, y] / max_w, 0.0, 1.0)
         img[y, x] = v > 0 ?
             RGB(1.0 - 0.85v, 1.0 - 0.85v, 1.0 - 0.85v) :
             RGB(1.0, 1.0, 1.0)
@@ -103,8 +107,8 @@ function qt_topdown(qt,
             li = buf[idx]
             # li = (c1-1)*d + c2 with Julia column-major indexing: the slow
             # index c1 is the display row (y), c2 the column (x).
-            r0 = (li - 1) ÷ d + 1
-            c0 = (li - 1) % d + 1
+            r0 = (li - 1) % d + 1   # fast index (y) -> display row
+            c0 = (li - 1) ÷ d + 1   # slow index (x) -> display column
             r, g, b = red(img[r0, c0]), green(img[r0, c0]), blue(img[r0, c0])
             img[r0, c0] = RGB((1-tint)*r + tint*red(c),
                               (1-tint)*g + tint*green(c),

@@ -1,11 +1,16 @@
 import GranularScenes as GS
 using StaticArrays: SVector
+using Rooms
+using JSON
 
 # T1: round-trip point -> leaf -> bounds contains point
 qt = GS.QuadTree(4, 5)
 for p in (SVector(-0.46875, -0.03125), SVector(0.46875, 0.21875))
     n = GS.leaf_at(qt, p)
     b = GS.node_bounds(qt, n)
+    @show p
+    @show b
+    @show GS.area(b)
     @assert b.xmin <= p[1] <= b.xmax && b.ymin <= p[2] <= b.ymax
     println(p, " -> ", n, " bounds=", b)
 end
@@ -26,8 +31,20 @@ for i in 1:k
     @assert b.xmin <= xc <= b.xmax && b.ymin <= yc <= b.ymax
 end
 
+dataset = "window-0.1/2025-02-05_vifdDO"
+function load_room(idx::Int)
+
+    base_path = "/spaths/datasets/$(dataset)/scenes"
+    path = joinpath(base_path, "$(idx).json")
+    local base_s
+    open(path, "r") do f
+        base_s = JSON.parse(f)
+    end
+    from_json(GridRoom, base_s)
+end
 # T4: corner indices of room map to correct node-space corners
-r = <your 16x16 GridRoom>   # fill in from notebook
+# r = <your 16x16 GridRoom>   # fill in from notebook
+r = load_room(1)
 mk = GS.room_index_to_point(r, 1)            # (row 1, col 1)
 mk2 = GS.room_index_to_point(r, 16*16)       # (row 16, col 16)
 @assert mk ≈ SVector(-0.46875, -0.46875)     # top-left corner in tile coords

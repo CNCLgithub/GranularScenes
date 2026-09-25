@@ -99,8 +99,9 @@ function node_bounds(qt::QuadTree, n::NodeId)
     s = 1.0 / L   # schema bounds assumed [-0.5, 0.5]^2, as in the renderer
     x, y = node_xy(n)
     sz = leaf_cells_per_side(qt, n)
-    lo = SVector((x - L/2) * s, (y - L/2) * s)
-    AABB2D(lo, lo .+ sz .* s)
+    lo = SVector((x * sz - L/2) * s, (y * sz - L/2) * s)
+    hi = lo .+ sz .* s
+    AABB2D(lo[1], lo[2], hi[1], hi[2])
 end
 
 center(n::NodeId, qt::QuadTree) = center(node_bounds(qt, n))
@@ -122,7 +123,7 @@ end
 "Root-only tree with weight μ₀."
 function QuadTree(max_level::Int, μ₀::Float64)
     root = NodeId(UInt8(1), UInt32(0))
-    schema = QTSchema(max_level, AABB2D(SVector(-0.5, -0.5), SVector(0.5, 0.5)),
+    schema = QTSchema(max_level, AABB2D(-0.5, -0.5, 0.5, 0.5),
                       [root])
     QuadTree(schema, Dict{NodeId,Float64}(root => μ₀))
 end
@@ -139,7 +140,7 @@ function QuadTree(cur_depth::Int, max_level::Int)
         throw(ArgumentError("cur_depth=$cur_depth out of 1..max_level=$max_level"))
     n_cells = 4^(cur_depth - 1)
     leaves = [NodeId(UInt8(cur_depth), UInt32(m)) for m in 0:n_cells-1]
-    schema = QTSchema(max_level, AABB2D(SVector(-0.5, -0.5), SVector(0.5, 0.5)), leaves)
+    schema = QTSchema(max_level, AABB2D(-0.5, -0.5, 0.5, 0.5), leaves)
     weight_map = Dict{NodeId,Float64}(zip(leaves, rand(n_cells)))
     QuadTree(schema, weight_map)
 end

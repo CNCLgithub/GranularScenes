@@ -244,11 +244,13 @@ function mytest()
     # cam_height slider (5..60) is world units; must stay < d÷2 (bbox top).
     cam_h       = min(cam_height, Float32(max_room_height - 2))
     cam_world_y = floor_world_y + cam_h
-    cam_world_z = Float32(d-2)
+    # cam_world_z = Float32(d-2)
+    cam_world_z = Float32(-(d-2)) 
     cam_world_x = 0.0f0
 
     pitch_rad   = deg2rad(Float32(cam_pitch))
-    target_dist = Float32(-room_half * 2)
+    # target_dist = Float32(-room_half * 2)
+    target_dist = Float32(room_half * 2)
     target_x    = 0.0f0
     target_y    = cam_world_y + target_dist * tan(pitch_rad)
     target_z    = cam_world_z + target_dist
