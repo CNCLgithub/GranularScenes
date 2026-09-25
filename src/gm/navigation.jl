@@ -101,8 +101,11 @@ function leaf_at(qt::QuadTree, p::SVector{2, Float64})
     v = clamp((p[2] - b.ymin) / (b.ymax - b.ymin), 0.0, 1 - 1e-12)
     x = min(Int(floor(u * L)), L - 1)
     y = min(Int(floor(v * L)), L - 1)
-    for d in max_level(qt):-1:1
-        n = NodeId(UInt8(d), morton_code(x, y, d))
+    D = max_level(qt)
+    for d in D:-1:1
+        # morton_code takes node-level coords (d-1 bits/axis at depth d);
+        # right-shift finest-cell coords accordingly (cf. navigation.jl:163).
+        n = NodeId(UInt8(d), morton_code(x >> (D - d), y >> (D - d), d))
         haskey(qt.weight_map, n) && return n
     end
     error("point outside tree: $p")
