@@ -21,12 +21,10 @@ weighted by the per-leaf cost coefficient. The normalization makes the
 estimator a proper smoothing: at τ → 0 it recovers the indicator of the
 optimal path; larger τ spreads mass over the frontier.
 """
-function qt_a_star(qt::QuadTree, obs_cost::Float64, ent, ext,
+function qt_a_star(qt::QuadTree, obs_cost::Float64, ent::S2V, ext::S2V,
                    τ::Float64 = 1.0)
-    ent_p = _to_point(ent, qt)
-    ext_p = _to_point(ext, qt)
-    src  = leaf_at(qt, ent_p)
-    goal = leaf_at(qt, ext_p)
+    src  = leaf_at(qt, ent)
+    goal = leaf_at(qt, ext)
 
     open_set = PriorityQueue{NodeId, Float64}()
     open_set[src] = 0.0
@@ -268,10 +266,10 @@ Map a `GridRoom` linear tile index (column-major over `steps(r)`, fast axis =
 """
 function room_index_to_point(r::GridRoom, i::Int)
     nr, nc = steps(r)
-    col = (i - 1) % nr + 1      # axis-1 index (fast axis = column / x)
-    row = (i - 1) ÷ nr + 1      # axis-2 index
+    row = (i - 1) % nr + 1      # fast axis = steps[1] = row -> pos[2] (y)
+    col = (i - 1) ÷ nr + 1      # slow axis = steps[2] = col -> pos[1] (x)
     SVector{2, Float64}((col - 0.5) / nc - 0.5,
-                        0.5 - (row - 0.5) / nr)
+                        (row - 0.5) / nr - 0.5)
 end
 
 """
@@ -284,9 +282,10 @@ for anything fed to `AStarPlanner` / `qt_a_star` as a linear index.
 function room_index_to_qt(r::GridRoom, i::Int, qt::QuadTree)
     L = finest_grid(qt)
     p = room_index_to_point(r, i)
-    c = p .+ 0.5
-    col = clamp(ceil(Int, c[1] * L), 1, L)
-    row = clamp(ceil(Int, c[2] * L), 1, L)
-    (col - 1) * L + row
+    # leaf_at(qt, p)
+    # c = p .+ 0.5
+    # col = clamp(ceil(Int, c[1] * L), 1, L)
+    # row = clamp(ceil(Int, c[2] * L), 1, L)
+    # (col - 1) * L + row
 end
 

@@ -2,8 +2,8 @@ export AStarPlanner, AStarState, PlanningModule,
     qt_topdown, best_path
 
 @kwdef struct AStarPlanner <: PlanningProtocol
-    ent::Int
-    ext::Int
+    ent::S2V
+    ext::S2V
     nsamples::Int = 100
     obstacle_cost::Float64 = 1.0
     grad_tau::Float64 = 1.0

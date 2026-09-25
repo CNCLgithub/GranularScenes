@@ -288,11 +288,17 @@ function mytest()
 
     vision_module = PerceptionModule(vision_prot, cm)
 
+    start_pos = GS.room_index_to_qt(r, first(entrance(r)), qt)
+    stop_pos = GS.room_index_to_qt(r, first(exits(r)), qt)
+
+    @show start_pos
+    @show stop_pos
+
     planning_prot = AStarPlanner(;
-        ent = GS.room_index_to_qt(r, first(entrance(r)), qt),
-        ext = GS.room_index_to_qt(r, first(exits(r)), qt),
-                                nsamples = vision_prot.chain_length,
-                                )
+        ent = start_pos,
+        ext = stop_pos,
+        nsamples = vision_prot.chain_length,
+    )
     planning_module = PlanningModule(planning_prot)
     
 
