@@ -51,3 +51,4 @@ end
 
 include("perception/perception.jl")
 include("planning/planning.jl")
+include("attention/attention.jl")

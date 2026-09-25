@@ -61,9 +61,7 @@ function step_module!(perception::MentalModule{<:AdaptiveMH})
     # Pre-attentive scene processing
     for _ = 1:proc.rw_budget
         trace = state.samples[end]
-        selected = select_node_uniform(trace)
-        new_trace, w, _... = regenerate(trace, selected)
-
+        new_trace, w = select_node_uniform(trace)
         # MH acceptance function
         if log(rand()) < w
             # Add new trace to chain

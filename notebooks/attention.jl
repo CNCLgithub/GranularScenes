@@ -303,24 +303,13 @@ function mytest()
         nsamples = vision_prot.chain_length,
     )
     planning_module = PlanningModule(planning_prot)
-
-    ac = AdaptiveComputation{QTVisionTrace}(
-        ;
-        load = 500
-    )
-    attention_module = AttentionModule(ac)
     
-    println("Perception")
-    @time for _ = 1:10
+
+    @time for _ = 1:100
         step_module!(vision_module)
     end
 
-    println("Planning")
     @time step_module!(planning_module, vision_module)
-
-    println("Attention")
-    @time step_module!(attention_module, vision_module, planning_module)
-    
 
     best_path_idx, best_path_vec = GranularScenes.best_path(planning_module)
     best_path_qt = get_retval(vision_module.state.samples[best_path_idx])

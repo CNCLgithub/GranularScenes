@@ -348,5 +348,6 @@ function refine_space(state, params)
     end
 end
 
+include("datastructures.jl")
 
 include("visuals.jl")

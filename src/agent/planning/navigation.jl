@@ -51,12 +51,23 @@ function step_module!(planning::MentalModule{<:AStarPlanner},
     return nothing
 end
 
+function update_expectation!(planning::MentalModule{<:AStarPlanner},
+                             perception::MentalModule{<:AdaptiveMH})
+end
+
+################################################################################
+# Access
+################################################################################
 
 function best_path(planning::MentalModule{<:AStarPlanner})
     protocol, state = mparse(planning)
     idx = argmax(state.scores)
     return idx, state.paths[idx]
 end
+
+################################################################################
+# Visualization
+################################################################################
 
 using Colors: N0f8
 
