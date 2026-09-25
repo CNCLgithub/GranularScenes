@@ -296,22 +296,33 @@ function mytest()
 
     @time step_module!(planning_module, vision_module)
 
+    best_path_idx, best_path_vec = GranularScenes.best_path(planning_module)
+    best_path_qt = get_retval(vision_module.state.samples[best_path_idx])
+    path_viz = qt_topdown(best_path_qt, best_path_vec)
+
     map_trace = maximum_aposteriori(vision_module)
     map_trace, _... = Gen.regenerate(map_trace, select(:depth))
     map_depth = depth_map_array(map_trace[:depth])
 
-    (renderer, gt_depth, map_depth)
+    gt_topdown = room_topdown(r)
+    (gt_topdown, gt_depth, map_depth, path_viz)
 end
 
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
-renderer, gt_depth, map_depth = mytest();
+gt_topdown, gt_depth, map_depth, best_path = mytest();
 
 # ╔═╡ 290f6e10-8b16-4646-86bf-9d79d9831919
 gt_depth
 
 # ╔═╡ 7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
 map_depth
+
+# ╔═╡ db88ff55-b7f0-4ea4-b63f-d36178efd42f
+best_path
+
+# ╔═╡ 4e263aee-7db2-45ce-b8be-375d4806318f
+gt_topdown
 
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
@@ -323,6 +334,8 @@ map_depth
 # ╠═dcad0f17-d957-4a43-87c4-f1334be5b59b
 # ╠═290f6e10-8b16-4646-86bf-9d79d9831919
 # ╠═7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
+# ╠═db88ff55-b7f0-4ea4-b63f-d36178efd42f
+# ╠═4e263aee-7db2-45ce-b8be-375d4806318f
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
 # ╟─a4186c8c-f1ad-479a-a5fc-5274b4344528
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
