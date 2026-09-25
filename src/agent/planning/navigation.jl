@@ -101,10 +101,12 @@ function qt_topdown(qt,
                                    RGB(0.9, 0.15, 0.1)
         for idx in 1:k
             li = buf[idx]
-            c1 = (li - 1) ÷ d + 1   # x column (per leaf_lin_idxs! convention)
-            c2 = (li - 1) % d + 1   # y row
-            r, g, b = red(img[c2, c1]), green(img[c2, c1]), blue(img[c2, c1])
-            img[c2, c1] = RGB((1-tint)*r + tint*red(c),
+            # li = (c1-1)*d + c2 with Julia column-major indexing: the slow
+            # index c1 is the display row (y), c2 the column (x).
+            r0 = (li - 1) ÷ d + 1
+            c0 = (li - 1) % d + 1
+            r, g, b = red(img[r0, c0]), green(img[r0, c0]), blue(img[r0, c0])
+            img[r0, c0] = RGB((1-tint)*r + tint*red(c),
                               (1-tint)*g + tint*green(c),
                               (1-tint)*b + tint*blue(c))
         end

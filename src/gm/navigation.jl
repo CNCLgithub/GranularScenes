@@ -266,10 +266,13 @@ Map a `GridRoom` linear tile index (column-major over `steps(r)`, fast axis =
 """
 function room_index_to_point(r::GridRoom, i::Int)
     nr, nc = steps(r)
-    row = (i - 1) % nr + 1      # fast axis = steps[1] = row -> pos[2] (y)
-    col = (i - 1) ÷ nr + 1      # slow axis = steps[2] = col -> pos[1] (x)
-    SVector{2, Float64}((col - 0.5) / nc - 0.5,
-                        (row - 0.5) / nr - 0.5)
+    # Display-row axis: write_obstacles! puts leaf_lin_idxs!'s c1 (x) in the
+    # display row slot, so the room's fast axis steps[1] corresponds to x.
+    col = (i - 1) ÷ nr + 1      # slow axis -> pos[1] (x)
+    row = (i - 1) % nr + 1      # fast axis -> pos[2] (y)
+    x, y = col, row
+    SVector{2, Float64}((x - 0.5) / nr - 0.5,
+                        (y - 0.5) / nc - 0.5)
 end
 
 """

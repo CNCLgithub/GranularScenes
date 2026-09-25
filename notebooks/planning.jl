@@ -228,6 +228,7 @@ function mytest()
     p = GS.room_index_to_point(r, first(entrance(r)))
     println(GS.leaf_at(QuadTree(4, 5), p))   # should be a leaf at the room's left/mid edge
 
+    println(entrance(r), exits(r), steps(r))
     
     d = grid_dim = 16
 
