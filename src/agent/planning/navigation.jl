@@ -17,6 +17,7 @@ end
 
 function PlanningModule(protocol::AStarPlanner)
     scores = Vector{Float64}(undef, protocol.nsamples)
+    fill!(scores, -Inf)
     paths = Vector{Vector{NodeId}}(undef, protocol.nsamples)
     state = AStarState(scores, paths)
     MentalModule{AStarPlanner}(protocol, state)
@@ -31,7 +32,8 @@ function step_module!(planning::MentalModule{<:AStarPlanner},
 
     mass = logsumexp(vstate.weights)
 
-    for i = 1:protocol.nsamples
+    n = length(vstate.samples)
+    for i = 1:n
         vtrace = vstate.samples[i]
         vweight = vstate.weights[i] - mass
         qt = get_retval(vtrace)

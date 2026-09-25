@@ -10,6 +10,7 @@ using Random
 using Parameters
 using FillArrays
 using StaticArrays
+using DataStructures
 using DocStringExtensions
 using FunctionalCollections
 

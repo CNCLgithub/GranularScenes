@@ -44,7 +44,7 @@ function qt_a_star(qt::QuadTree, obs_cost::Float64, ent, ext,
         # Boltzmann mass over the open set at this expansion:
         # p(node expanded) ∝ exp(−(g+h)/τ). Each expansion contributes
         # mass × (per-leaf cost coefficient) to that leaf's δkπ.
-        fmin = minimum(open_set)
+        _, fmin = minimum(open_set)
         Z = 0.0
         for (_, f) in open_set
             Z += exp(-(f - fmin) / τ)
@@ -162,7 +162,7 @@ function adjacent_leaves!(out::Vector{NodeId}, qt::QuadTree, n::NodeId)
         d = n.depth
         while d >= 1
             cell = NodeId(UInt8(d),
-                          morton_code(bx >> (D - d), by >> (D - d), d))
+                          morton_code(bx >> (D - d), by >> (D - d), Int64(d)))
             if haskey(qt.weight_map, cell)
                 out[cnt += 1] = cell
                 found = true
@@ -256,4 +256,5 @@ Maps a linear index in nxn to a R^2 plane [-0.5, 0.5]
 - d: number of columns
 """
 function idx_to_node_space(i::Int64, d::Int64)
+    index_to_pos(GridTransform(d), i)
 end
