@@ -21,7 +21,7 @@ weighted by the per-leaf cost coefficient. The normalization makes the
 estimator a proper smoothing: at τ → 0 it recovers the indicator of the
 optimal path; larger τ spreads mass over the frontier.
 """
-function qt_a_star(qt::QuadTree, obs_cost::Float64, ent, ext;
+function qt_a_star(qt::QuadTree, obs_cost::Float64, ent, ext,
                    τ::Float64 = 1.0)
     ent_p = _to_point(ent, qt)
     ext_p = _to_point(ext, qt)
@@ -246,3 +246,14 @@ end
 "Entry/exit may be world points or finest-cell indices (1-based, row-major)."
 _to_point(i::Int, qt::QuadTree) = idx_to_node_space(i, finest_grid(qt))
 _to_point(p::SVector{2, Float64}, qt::QuadTree) = p
+
+"""
+
+Maps a linear index in nxn to a R^2 plane [-0.5, 0.5]
+
+# Arguments
+- i: linear index
+- d: number of columns
+"""
+function idx_to_node_space(i::Int64, d::Int64)
+end

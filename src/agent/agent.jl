@@ -50,3 +50,4 @@ mutable struct Agent{V<:PerceptionProtocol,
 end
 
 include("perception/perception.jl")
+include("planning/planning.jl")

@@ -1,0 +1,331 @@
+### A Pluto.jl notebook ###
+# v1.0.3
+
+using Markdown
+using InteractiveUtils
+
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    #! format: off
+    return quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+    #! format: on
+end
+
+# ╔═╡ 1d39e7ee-a6e3-11f1-3258-19edf57342c6
+begin
+	using Pkg
+	Pkg.activate("..")
+	
+	using Gen
+	using PlutoUI
+	using Random
+	using Printf
+	using JSON
+	using Colors
+	using StaticArrays
+	# using StatProfilerHTML
+
+	using Rooms
+	
+	using Revise
+	using GranularScenes
+end
+
+
+# ╔═╡ d697c7c5-664d-4273-a24a-78823aab6bae
+html"""
+<style>
+    @media screen {
+        main {
+            margin: 0 auto;
+            max-width: 3000px;
+            padding-left: max(100px, 10%);
+            padding-right: max(100px, 10%);
+        }
+    }
+	pluto-output {
+    font-size: 1.2em; /* Adjust base text size */
+    font-family: "Inter";
+	}
+
+pluto-output h1 {
+    font-size: 2.5rem; /* Adjust header sizes */
+	font-family: "Inter";
+}
+
+pluto-output h2 {
+    font-size: 3.0rem;
+}
+
+cm-editor .cm-scroller,
+.cm-editor .cm-content {
+    font-family: "Fira Code", monospace !important;
+    font-size: 18px !important; /* Adjust size here */
+}
+</style>
+"""
+
+# ╔═╡ 20aaf2ed-350d-4585-aa12-6fc010d67bd2
+@bind cam_height Slider(10.0:1.0:100.0, default=50.0, show_value=true)
+
+# ╔═╡ cff3abed-e02a-4918-80e4-3ebeba0fc59c
+@bind cam_pitch Slider(-40.0:1.0:10.0, default=-12.0, show_value=true) # degrees down from horizontal
+
+# ╔═╡ 5e44a860-09b7-44fe-b805-bb50058a081c
+@bind cam_fov Slider(0.1:0.02:1.2, default=0.55, show_value=true)
+
+# ╔═╡ dcad0f17-d957-4a43-87c4-f1334be5b59b
+@bind obs_height_ratio Slider(0.1:0.05:0.9, default=0.45, show_value=true) # fraction of room height
+
+# ╔═╡ df1e063b-08f7-4c22-a980-a756cac6c563
+md"""
+### Room & Camera Controls
+- **Camera Height (head height)**: $(cam_height) voxels
+- **Camera Pitch (look down)**: $(cam_pitch)°
+- **Field of View (FOV)**: $(cam_fov)
+- **Obstacle Height**: $(obs_height_ratio * 100)% of room height
+"""
+
+# ╔═╡ a4186c8c-f1ad-479a-a5fc-5274b4344528
+function render_cross(cam_height, cam_pitch, cam_fov, obs_height_ratio)
+    # 1. Setup Renderer
+    grid_dim = 128
+    r_test = QuadTreeRenderer(; grid_res = grid_dim,
+                                image_res = (256, 256),
+                                use_cuda = false)
+
+    d = grid_dim
+    mid = d ÷ 2
+    room_half = d ÷ 2 - 4          # Room spans [mid - room_half, mid + room_half]
+    max_room_height = d ÷ 2        # Height of outer walls
+    obs_h = round(Int, max_room_height * obs_height_ratio)
+
+    # 2. Build Room Geometry on Host
+    mat = zeros(Float32, d, d, d)
+
+    # (a) Floor plane (1 voxel thick at bottom of room)
+    floor_y = 2
+    for gx in (mid - room_half):(mid + room_half)
+        for gz in (mid - room_half):(mid + room_half)
+            mat[gx, floor_y, gz] = 1.0f0
+        end
+    end
+
+    # (b) Outer Room Walls (perimeter)
+    for gy in floor_y:(floor_y + max_room_height)
+        for i in (mid - room_half):(mid + room_half)
+            mat[mid - room_half, gy, i] = 1.0f0  # Left wall (X min)
+            mat[mid + room_half, gy, i] = 1.0f0  # Right wall (X max)
+            mat[i, gy, mid + room_half] = 1.0f0  # Far wall (Z max)
+            # (Near wall omitted so camera at wall can see in)
+        end
+    end
+
+    # (c) Test Obstacles: Cross pattern with specified obstacle height
+    arm_w = max(1, d ÷ 32)
+    arm_len = room_half ÷ 2
+    for gy in floor_y:(floor_y + obs_h)
+        # X-aligned arm
+        for gx in (mid - arm_len):(mid + arm_len)
+            for gz in (mid - arm_w):(mid + arm_w)
+                mat[gx, gy, gz] = 1.0f0
+            end
+        end
+        # Z-aligned arm
+        for gz in (mid - arm_len):(mid + arm_len)
+            for gx in (mid - arm_w):(mid + arm_w)
+                mat[gx, gy, gz] = 1.0f0
+            end
+        end
+    end
+
+    copyto!(r_test.grid_material, mat)
+
+    # 3. Explicit Bounding Box (centered grid: world coords = grid_idx - mid)
+    half = Float32(d) * r_test.voxel_dx / 2.0f0
+    r_test.bbox[1] = -half; r_test.bbox[2] = -half; r_test.bbox[3] = -half
+    r_test.bbox[4] =  half; r_test.bbox[5] =  half; r_test.bbox[6] =  half
+
+    # 4. Camera Geometry:
+    # Placed at near wall (center X=0, near Z = -room_half)
+    # Head height Y = (floor_y - mid) + cam_height in world coords
+    floor_world_y = Float32(floor_y - mid)
+    cam_world_y = floor_world_y + Float32(cam_height)
+    cam_world_z = Float32(-room_half + 2)  # slightly inside the near wall
+    cam_world_x = 0.0f0
+
+    # Look target: Straight ahead in +Z, tilted down according to pitch
+    pitch_rad = deg2rad(Float32(cam_pitch))
+    target_dist = Float32(room_half * 2)
+    target_x = 0.0f0
+    target_y = cam_world_y + target_dist * tan(pitch_rad)
+    target_z = cam_world_z + target_dist
+
+    r_test.camera_pos = SVector{3,Float32}(cam_world_x, cam_world_y, cam_world_z)
+    r_test.look_at    = SVector{3,Float32}(target_x, target_y, target_z)
+    r_test.up         = SVector{3,Float32}(0.0f0, 1.0f0, 0.0f0)
+    r_test.fov        = Float32(cam_fov)
+
+    # 5. Render
+    render!(r_test)
+
+    # 6. Display Depth Map
+    depth = Array(r_test.depth_buffer)[:, :, 1]
+    hits = depth .> 0.0f0
+    d_display = zeros(Float32, size(depth))
+    if any(hits)
+        d_min, d_max = extrema(depth[hits])
+        # Invert so closer objects are brighter
+        d_display[hits] .= one(Float32) .- (depth[hits] .- d_min) ./ max(d_max - d_min, Float32(1E-4))
+    end
+
+    Gray.(d_display)
+end
+
+# ╔═╡ 14a33876-0998-47a2-a7ce-96cace0cd335
+dataset = "window-0.1/2025-02-05_vifdDO"
+
+# ╔═╡ 8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
+function load_room(idx::Int)
+
+    base_path = "/spaths/datasets/$(dataset)/scenes"
+    path = joinpath(base_path, "$(idx).json")
+    local base_s
+    open(path, "r") do f
+        base_s = JSON.parse(f)
+    end
+    from_json(GridRoom, base_s)
+end
+
+# ╔═╡ 57184b8c-e34b-4fbf-a870-02f795e1396e
+"""
+    debug_occupancy_stats(r::QuadTreeRenderer)
+
+Counts of occupied voxels and per-slab occupancy (how many cells are filled at
+each gy) — quick numeric confirmation that the buffer is being filled.
+"""
+function debug_occupancy_stats(r::QuadTreeRenderer)
+    mat = r.grid_material isa Array ? r.grid_material : Array(r.grid_material)
+    d = size(mat, 1)
+    occ = count(!iszero, mat)
+    per_gy = [count(!iszero, @view mat[:, gy, :]) for gy in 1:d]
+    top = findlast(!iszero, per_gy)
+    return (occupied = occ, fraction = occ / (d^3),
+            top_gy = top === nothing ? 0 : top,
+            max_gy = maximum(per_gy), argmax_gy = argmax(per_gy))
+end
+
+# ╔═╡ 67bb0b77-f540-480a-aa42-0188d0df1ca4
+function mytest()
+    r = load_room(1)
+    d = grid_dim = 16
+
+    mid = d ÷ 2
+    room_half = d ÷ 2 - 4
+    max_room_height = d ÷ 2
+    obs_h = round(Int, max_room_height * obs_height_ratio)
+
+    floor_y = 2
+    floor_world_y = Float32(floor_y - mid)
+
+    # --- camera scaled to the grid --------------------------------------
+    # cam_height slider (5..60) is world units; must stay < d÷2 (bbox top).
+    cam_h       = min(cam_height, Float32(max_room_height - 2))
+    cam_world_y = floor_world_y + cam_h
+    cam_world_z = Float32(d-2)
+    cam_world_x = 0.0f0
+
+    pitch_rad   = deg2rad(Float32(cam_pitch))
+    target_dist = Float32(-room_half * 2)
+    target_x    = 0.0f0
+    target_y    = cam_world_y + target_dist * tan(pitch_rad)
+    target_z    = cam_world_z + target_dist
+
+
+    cam_pos = SVector{3,Float32}(cam_world_x, cam_world_y, cam_world_z)
+    look_at = SVector{3,Float32}(target_x, target_y, target_z)
+    
+    pixel_var = Float32(.001)
+    renderer = QuadTreeRenderer(;
+            image_res       = (256, 256),
+            use_cuda        = true,
+            wall_mode       = true,
+            grid_res        = grid_dim,
+            obstacle_height = obs_h,
+            camera_pos      = cam_pos,
+            look_at         = look_at,
+            fov             = Float32(cam_fov)
+                               )
+
+
+    depth = qt_observe(renderer, r, pixel_var)
+    gt_depth = depth_map_array(depth)
+
+    @show debug_occupancy_stats(renderer)
+    cm = choicemap(:depth => depth)
+    
+    vision_prior = QTVisionPrior()
+    vision_obsm  = QTVisionLikelihood(renderer, pixel_var)
+    qt = QuadTree(4, 5)
+    
+    vision_prot = AdaptiveMH(;
+                            model = qt_vision,
+                            model_args = (qt.schema, vision_prior, vision_obsm),
+                            obs = cm,
+                             chain_length = 1000,
+                            )
+
+    vision_module = PerceptionModule(vision_prot, cm)
+
+    planning_prot = AStarPlanner(;
+                                ent = first(entrance(r)),
+                                ext = first(exits(r)),
+                                nsamples = vision_prot.chain_length,
+                                )
+    planning_module = PlanningModule(planning_prot)
+    
+
+    @time for _ = 1:100
+        step_module!(vision_module)
+    end
+
+    @time step_module!(planning_module, vision_module)
+
+    map_trace = maximum_aposteriori(vision_module)
+    map_trace, _... = Gen.regenerate(map_trace, select(:depth))
+    map_depth = depth_map_array(map_trace[:depth])
+
+    (renderer, gt_depth, map_depth)
+end
+
+
+# ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
+renderer, gt_depth, map_depth = mytest();
+
+# ╔═╡ 290f6e10-8b16-4646-86bf-9d79d9831919
+gt_depth
+
+# ╔═╡ 7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
+map_depth
+
+# ╔═╡ Cell order:
+# ╟─d697c7c5-664d-4273-a24a-78823aab6bae
+# ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
+# ╟─df1e063b-08f7-4c22-a980-a756cac6c563
+# ╠═20aaf2ed-350d-4585-aa12-6fc010d67bd2
+# ╠═cff3abed-e02a-4918-80e4-3ebeba0fc59c
+# ╠═5e44a860-09b7-44fe-b805-bb50058a081c
+# ╠═dcad0f17-d957-4a43-87c4-f1334be5b59b
+# ╠═290f6e10-8b16-4646-86bf-9d79d9831919
+# ╠═7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
+# ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
+# ╟─a4186c8c-f1ad-479a-a5fc-5274b4344528
+# ╠═14a33876-0998-47a2-a7ce-96cace0cd335
+# ╠═8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
+# ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
+# ╠═57184b8c-e34b-4fbf-a870-02f795e1396e
