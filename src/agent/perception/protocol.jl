@@ -35,7 +35,7 @@ function AMHChain(proc::AdaptiveMH,
     end
     
     # Sample initial trace
-    trace, _ = Gen.generate(proc.model,
+    trace, w = Gen.generate(proc.model,
                             proc.model_args,
                             constraints)
 
@@ -45,7 +45,7 @@ function AMHChain(proc::AdaptiveMH,
     push!(samples, trace)
 
     weights = CircularBuffer{Float64}(proc.chain_length)
-    push!(weights, 1.0)
+    push!(weights, w)
 
     AMHChain{T}(samples, weights)
 end

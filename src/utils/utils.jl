@@ -217,23 +217,38 @@ function softmax(x::Array{<:Real}, t::Real = 1.0)
     return out
 end
 
-function softmax!(out::Array{<:Real}, x::Array{<:Real}, t::Real = 1.0)
-    nx = length(x)
-    maxx = maximum(x)
-    sxs = 0.0
-
-    if maxx == -Inf
-        out .= 1.0 / nx
-        return nothing
-    end
-
-    @inbounds for i = 1:nx
-        out[i] = @fastmath exp((x[i] - maxx) / t)
-        sxs += out[i]
-    end
-    rmul!(out, 1.0 / sxs)
-    return nothing
+function softmax!(out, t = 1.0)
+    softmax!(out, out, t)
 end
+
+function softmax!(out, x, t)
+    m = -Inf
+    @inbounds for v in x; v > m && (m = v); end
+    s = 0.0
+    @inbounds for i in eachindex(x)
+        e = @fastmath exp((x[i] - m) / t)
+        out[i] = e; s += e
+    end
+    @inbounds for i in eachindex(x); out[i] /= s; end
+    nothing
+end
+# function softmax!(out::Array{<:Real}, x::Array{<:Real}, t::Real = 1.0)
+#     nx = length(x)
+#     maxx = maximum(x)
+#     sxs = 0.0
+
+#     if maxx == -Inf
+#         out .= 1.0 / nx
+#         return nothing
+#     end
+
+#     @inbounds for i = 1:nx
+#         out[i] = @fastmath exp((x[i] - maxx) / t)
+#         sxs += out[i]
+#     end
+#     rmul!(out, 1.0 / sxs)
+#     return nothing
+# end
 
 function uniform_weights(x)::Vector{Float64}
     n = length(x)

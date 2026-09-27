@@ -1,4 +1,5 @@
-export AdaptiveComputation
+export AdaptiveComputation,
+    att_topdown
 
 ################################################################################
 # Adaptive Computation
@@ -112,6 +113,10 @@ function task_relevance!(aux::AdaptiveAux,
     return tr
 end
 
+function is_ready(aux::AdaptiveAux)
+    !(isempty(aux.dPi) || isempty(aux.dS))
+end
+
 function step_module!(att::MentalModule{AdaptiveComputation},
                       vis::MentalModule{AdaptiveMH},
                       planning::MentalModule{AStarPlanner})
@@ -130,8 +135,15 @@ function attend!(att::MentalModule{AdaptiveComputation},
     @unpack vis_partition, base_steps, itemp = aprotocol
 
     trace = vstate.samples[end]
-    deltas = task_relevance!(astate, astate.dPi, astate.dS, vis_partition, trace)
-    importance = softmax(deltas, itemp)
+    if is_ready(astate)
+        deltas = task_relevance!(astate, astate.dPi, astate.dS, vis_partition, trace)
+        importance = softmax(deltas, itemp)
+    else
+        nl = latent_size(vis_partition, trace)
+        @show nl
+        importance = fill(1 / nl, nl)
+    end
+    @show importance
     # TODO: figure out load curve
     tload = aprotocol.load # load(aprotocol, deltas)
     # Number of latents to choose from
@@ -149,11 +161,12 @@ function attend!(att::MentalModule{AdaptiveComputation},
             push!(vstate.samples, new_trace)
             # increment weight
             push!(vstate.weights, vstate.weights[end] + w)
-            dS = min(w, 0.)
-        else
-            dS = -Inf
+            # dS = w * min(exp(w), 1.0)
+        # else
+        #     dS = -Inf
         end
 
+        dS = min(w, 0.)
         update_impact!(astate.dS, vis_partition, new_trace, idx, dS)
     end
     return nothing
@@ -186,4 +199,74 @@ function attend!(att::MentalModule{AdaptiveComputation},
         update_impact!(astate.dPi, aprotocol.vis_partition, vtrace, dPi)
     end
     return nothing
+end
+
+################################################################################
+# Visualization
+################################################################################
+
+function att_topdown(qt,
+                     att::MentalModule{<:AdaptiveComputation},
+                     d = finest_grid(qt);
+                     max_w::Float64 = 1.0, threshold::Float64 = 0.025)
+
+    protocol, state = mparse(att)
+
+    # Occupancy via the renderer's own fill routine (float buffer, d×d).
+    occ = Matrix{Float32}(undef, d, d)
+    write_obstacles!(occ, qt, d; threshold = Float32(threshold))
+
+    img = Matrix{RGB{Float64}}(undef, d, d)
+    max_w = max_w > 0 ? max_w : 1.0
+    background = RGB(0, 0, 0)
+    fill!(img, background)
+
+    # draw obstacles
+    # for x in 1:d, y in 1:d
+    #     v = clamp(occ[x, y] / max_w, 0.0, 1.0)
+    #     img[y, x] = v > 0 ?
+    #         RGB(1.0 - 0.85v, 1.0 - 0.85v, 1.0 - 0.85v) :
+    #         RGB(1.0, 1.0, 1.0)
+    # end
+    isempty(state.dPi) && return img
+
+    # task-relevance of leaves
+    task_relevance = Vector{Float64}(undef, nleaves(qt))
+    for i = 1:nleaves(qt)
+        n = qt.schema.leaves[i]
+        coord = center(n, qt)
+        dpi  = integrate!(state.nn_idxs, state.nn_dists, coord, state.dPi)
+        ds   = integrate!(state.nn_idxs, state.nn_dists, coord, state.dS)
+        task_relevance[i] = dpi + ds
+        # task_relevance[i] = dpi
+    end
+    importance = softmax(task_relevance, protocol.itemp)
+    max_imp = maximum(importance)
+    # re-scale importance to see full range better
+    for i = eachindex(importance)
+        importance[i] *= 1.0 / max_imp
+    end
+
+    # draw heatmap
+    tint = 0.45
+    buf = Int64[]
+    resize!(buf, d * d)
+    for (j, n) in enumerate(qt.schema.leaves)
+
+        red_hue = 0.01 + 0.99*importance[j]
+        c = RGB(red_hue, 0, 0)
+        k = leaf_lin_idxs!(buf, qt, n, d)   # render-cell linear indices
+        for idx in 1:k
+            li = buf[idx]
+            # li = (c1-1)*d + c2 with Julia column-major indexing: the slow
+            # index c1 is the display row (y), c2 the column (x).
+            r0 = (li - 1) % d + 1   # fast index (y) -> display row
+            c0 = (li - 1) ÷ d + 1   # slow index (x) -> display column
+            r, g, b = red(img[r0, c0]), green(img[r0, c0]), blue(img[r0, c0])
+            img[r0, c0] = RGB((1-tint)*r + tint*red(c),
+                              (1-tint)*g + tint*green(c),
+                              (1-tint)*b + tint*blue(c))
+        end
+    end
+    img
 end

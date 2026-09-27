@@ -306,7 +306,8 @@ function mytest()
 
     ac = AdaptiveComputation{QTVisionTrace}(
         ;
-        load = 500
+        load = 10,
+        itemp = 1,
     )
     attention_module = AttentionModule(ac)
     
@@ -319,30 +320,38 @@ function mytest()
     @time step_module!(planning_module, vision_module)
 
     println("Attention")
-    @time step_module!(attention_module, vision_module, planning_module)
-    
+    @time for _ = 1:50
+        step_module!(attention_module, vision_module, planning_module)
+    end
+
+
 
     best_path_idx, best_path_vec = GranularScenes.best_path(planning_module)
     best_path_qt = get_retval(vision_module.state.samples[best_path_idx])
     path_viz = qt_topdown(best_path_qt, best_path_vec)
+
+    att_viz = att_topdown(best_path_qt, attention_module)
 
     map_trace = maximum_aposteriori(vision_module)
     map_trace, _... = Gen.regenerate(map_trace, select(:depth))
     map_depth = depth_map_array(map_trace[:depth])
 
     gt_topdown = room_topdown(r)
-    (gt_topdown, gt_depth, map_depth, path_viz)
+    (gt_topdown, gt_depth, map_depth, path_viz, att_viz)
 end
 
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
-gt_topdown, gt_depth, map_depth, best_path = mytest();
+gt_topdown, gt_depth, map_depth, best_path, att_vis = mytest();
 
 # ╔═╡ 290f6e10-8b16-4646-86bf-9d79d9831919
 gt_depth
 
 # ╔═╡ 7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
 map_depth
+
+# ╔═╡ 2991cb98-187b-4b21-a47e-e32e04346353
+att_vis
 
 # ╔═╡ db88ff55-b7f0-4ea4-b63f-d36178efd42f
 best_path
@@ -360,6 +369,7 @@ gt_topdown
 # ╠═dcad0f17-d957-4a43-87c4-f1334be5b59b
 # ╠═290f6e10-8b16-4646-86bf-9d79d9831919
 # ╠═7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
+# ╠═2991cb98-187b-4b21-a47e-e32e04346353
 # ╠═db88ff55-b7f0-4ea4-b63f-d36178efd42f
 # ╠═4e263aee-7db2-45ce-b8be-375d4806318f
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb

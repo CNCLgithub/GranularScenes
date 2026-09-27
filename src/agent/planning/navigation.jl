@@ -108,8 +108,8 @@ function qt_topdown(qt,
 
     tint = 0.45
     buf = Int64[]
+    resize!(buf, d * d)
     for (j, n) in enumerate(path)
-        resize!(buf, d * d)
         k = leaf_lin_idxs!(buf, qt, n, d)   # render-cell linear indices
         c = j == 1               ? RGB(0.0, 0.6, 0.0) :
             j == lastindex(path) ? RGB(0.7, 0.0, 0.7) :
