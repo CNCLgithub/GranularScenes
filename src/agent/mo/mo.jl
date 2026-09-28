@@ -1,11 +1,18 @@
+export MO, GranularityModule
+
 @with_kw struct MO <: GranularityProtocol
-    
+    window::Int
 end
 
 mutable struct MOState <: MentalState{MO}
-    tick::Int
+    cooldown::Int
     schema::QTSchema
     time_integral::Dict{NodeId, Float64}
+end
+
+function GranularityModule(prot::MO, schema::QTSchema)
+    state = MOState(prot.window, schema, Dict{NodeId, Float64}())
+    MentalModule(prot, state)
 end
 
 function step_module!(mo::MentalModule{MO},
@@ -15,29 +22,68 @@ function step_module!(mo::MentalModule{MO},
 
     mo_prot, mo_state = mparse(mo)
     
+    # Time integral of task-relevance
+    time_integrate!(mo_state, mo_prot, attention)
+
+    isempty(mo_state.time_integral) && return nothing
+    
+    # Apply reframe
+    mo_state.cooldown -= 1
+    mo_state.cooldown == 0 || return nothing
+    mo_state.cooldown = mo_prot.window # reset cooldown
+    
     # get the schema - common to all traces
     schema = mo_state.schema
-    task_rel = deepcopy(mo_state.time_integral)
+    task_rel = collect(values(mo_state.time_integral))
 
-    split_p = split_prob(schema, task_rel)
+    split_p = split_prob(schema)
 
     move = rand() < split_p ?
         split_kernel(schema, task_rel) :
         merge_kernel(schema, task_rel)
 
+    @show move
+
     apply_split_merge_move!(move, mo)
-    apply_split_merge_move!(move, attention)
     apply_split_merge_move!(move, vision)
-    apply_split_merge_move!(move, planning)
+    step_module!(planning, vision)
     return nothing
 end
 
-function split_prob(g::QTSchema, tr::Vector{Float64})
+
+function time_integrate!(mo_state::MOState,
+                         mo_prot::MO,
+                         attention::MentalModule{AdaptiveComputation})
+
+    ti = mo_state.time_integral
+    aprot, astate = mparse(attention)
+
+    is_ready(astate) || return nothing
+    
+    for node = leaves(mo_state.schema)
+        coord = get_coord(aprot.vis_partition, mo_state.schema, node)
+        dpi  = integrate!(astate.nn_idxs, astate.nn_dists, coord, astate.dPi)
+        ds   = integrate!(astate.nn_idxs, astate.nn_dists, coord, astate.dS)
+        delta = dpi + ds
+        if haskey(ti, node)
+            prev = ti[node]
+            ti[node] = logsumexp(log(0.5)+prev, log(0.5)+delta)
+        else
+            ti[node] = delta
+        end
+    end
+
+    return nothing
+end
+
+MAX_LEAVES = 200
+
+function split_prob(g::QTSchema)
     # out of memory
-    nleaves(g) < MAX_LEAVES || return 0.0
+    nleaves(g) >= MAX_LEAVES && return 0.0
 
     # Only one leaf, can't merge
-    nleaves(g) == 1 || return 1.0
+    nleaves(g) == 1 && return 1.0
 
     # 50/50 split-merge
     0.5
@@ -79,10 +125,41 @@ function merge_kernel(g::QTSchema, tr::Vector{Float64})
     MergeMove(parent)
 end
 
+function apply_split_merge_move!(move::MergeMove,
+                                 mo::MentalModule{<:MO})
+    parent = move.node
+    mo_prot, mo_state = mparse(mo)
+    ti = mo_state.time_integral
+
+    kids = [child_key(parent, j) for j in 1:4]
+    all(k -> haskey(ti, k), kids) ||
+        throw(ArgumentError("Parent missing child"))
+
+    pooled = -Inf
+    for j = 1:4
+        k = child_key(parent, j)
+        haskey(ti, k) || throw(ArgumentError("Parent $(parent) missing child $(k)"))
+        pooled = logsumexp(ti[k], pooled)
+        delete!(ti, k)
+    end
+    pooled += log(0.25)
+
+    # add parent
+    ti[parent] = pooled
+
+    new_leaves = collect(NodeId, keys(ti))
+    sort!(new_leaves)
+
+    ps = mo_state.schema
+    mo_state.schema = QTSchema(max_level(ps),
+                               bounds(ps),
+                               new_leaves)
+    return nothing
+end
+
 function apply_split_merge_move!(move::SplitMove,
                                  mo::MentalModule{<:MO})
     node = move.node
-
     mo_prot, mo_state = mparse(mo)
     
     haskey(mo_state.time_integral, node) ||
@@ -96,11 +173,18 @@ function apply_split_merge_move!(move::SplitMove,
         mo_state.time_integral[k] = w
     end
     delete!(mo_state.time_integral, node)
-    keep = filter(!=(node), mo_state.schema.leaves)
-    append!(keep, kids)
-    mo_state.schema.leaves = keep
+
+    new_leaves = collect(NodeId, keys(mo_state.time_integral))
+    sort!(new_leaves)
+
+    mo_state.schema =
+        QTSchema(max_level(mo_state.schema),
+                 bounds(mo_state.schema),
+                 new_leaves)
+
     return nothing
 end
+
 
 function apply_move(move::SplitMove,
                     qt::QuadTree)
@@ -203,8 +287,3 @@ function apply_split_merge_move!(move::Reframe,
     end
     return nothing
 end
-
-end
-    apply_split_merge_move!(move, attention)
-    apply_split_merge_move!(move, vision)
-    apply_split_merge_move!(move, planning)

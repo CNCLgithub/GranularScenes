@@ -23,6 +23,8 @@ Base.isless(a::NodeId, b::NodeId) =
 Base.show(io::IO, n::NodeId) =
     print(io, "NodeId(d=$(Int(n.depth)), m=0b", bitstring(n.morton), ")")
 
+@inline depth(n::NodeId) = n.depth
+
 """
     morton_code(x, y, d)
 
@@ -80,19 +82,27 @@ end
 
 # convenience accessors ---------------------------------------------------------
 
+@inline max_level(schema::QTSchema) = schema.max_level
 @inline max_level(qt::QuadTree) = qt.schema.max_level
+@inline bounds(schema::QTSchema) = schema.bounds
 @inline bounds(qt::QuadTree) = qt.schema.bounds
 @inline nleaves(schema::QTSchema) = length(schema.leaves)
 @inline nleaves(qt::QuadTree) = length(qt.schema.leaves)
 @inline weight_of(qt::QuadTree, n::NodeId) = get(qt.weight_map, n, 0.0)
+@inline leaves(schema::QTSchema) = schema.leaves
 @inline leaves(qt::QuadTree) = qt.schema.leaves
 
 "Finest cells per axis."
+@inline finest_grid(schema::QTSchema) = 1 << (max_level(schema) - 1)
 @inline finest_grid(qt::QuadTree) = 1 << (max_level(qt) - 1)
 
 "Edge length of leaf `i` in finest cells."
 @inline leaf_cells_per_side(qt::QuadTree, n::NodeId) =
     1 << (max_level(qt) - n.depth)
+
+"Edge length of leaf `i` in finest cells."
+@inline leaf_cells_per_side(schema::QTSchema, n::NodeId) =
+    1 << (max_level(schema) - n.depth)
 
 "World-space AABB of a node key."
 function node_bounds(qt::QuadTree, n::NodeId)
@@ -105,6 +115,18 @@ function node_bounds(qt::QuadTree, n::NodeId)
     AABB2D(lo[1], lo[2], hi[1], hi[2])
 end
 
+"World-space AABB of a node key."
+function node_bounds(schema::QTSchema, n::NodeId)
+    L = finest_grid(schema)
+    s = 1.0 / L   # schema bounds assumed [-0.5, 0.5]^2, as in the renderer
+    x, y = node_xy(n)
+    sz = leaf_cells_per_side(schema, n)
+    lo = SVector((x * sz - L/2) * s, (y * sz - L/2) * s)
+    hi = lo .+ sz .* s
+    AABB2D(lo[1], lo[2], hi[1], hi[2])
+end
+
+center(n::NodeId, schema::QTSchema) = center(node_bounds(schema, n))
 center(n::NodeId, qt::QuadTree) = center(node_bounds(qt, n))
 dist(a::NodeId, b::NodeId, qt::QuadTree) = norm(center(a, qt) - center(b, qt))
 edge_length(n::NodeId, qt::QuadTree) = 2.0 * leaf_cells_per_side(qt, n) / finest_grid(qt)

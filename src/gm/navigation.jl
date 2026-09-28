@@ -174,7 +174,7 @@ function adjacent_leaves!(out::Vector{NodeId}, qt::QuadTree, n::NodeId)
         found && continue
         # Step 3: no same-size or coarser node present → subdivided finer.
         # The block at n.depth is internal; expand its children.
-        cnt += _descend_face!(out, cnt, qt, stack, n.depth,
+        cnt += _descend_face!(out, cnt, qt, stack, Int(n.depth),
                               bx >> (D - n.depth), by >> (D - n.depth), D)
     end
     return cnt

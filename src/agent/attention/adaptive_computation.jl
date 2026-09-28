@@ -106,7 +106,7 @@ function task_relevance!(aux::AdaptiveAux,
         coord = get_coord(partition, trace, i)
         _dpi  = integrate!(aux.nn_idxs, aux.nn_dists, coord, dPi)
         _ds   = integrate!(aux.nn_idxs, aux.nn_dists, coord, dS)
-        @printf "| δπ: %.2f \t | δS: %.2f |\n" _dpi _ds
+        # @printf "| δπ: %.2f \t | δS: %.2f |\n" _dpi _ds
         # @printf "| δπ: %.2f \t |\n" _dpi
         tr[i] = _dpi + _ds
     end
@@ -140,10 +140,8 @@ function attend!(att::MentalModule{AdaptiveComputation},
         importance = softmax(deltas, itemp)
     else
         nl = latent_size(vis_partition, trace)
-        @show nl
         importance = fill(1 / nl, nl)
     end
-    @show importance
     # TODO: figure out load curve
     tload = aprotocol.load # load(aprotocol, deltas)
     # Number of latents to choose from

@@ -44,6 +44,11 @@ function get_coord(p::WMPartition{T}, tr::T, node::NodeId
     center(node, qt)
 end
 
+function get_coord(p::WMPartition{T}, schema::QTSchema, node::NodeId
+                   ) where {T<:QTVisionTrace}
+    center(node, schema)
+end
+
 function select_prop(::WMPartition, ::QTVisionTrace, ::Int)
     node_ancestral_proposal
 end

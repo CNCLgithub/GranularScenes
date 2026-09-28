@@ -310,8 +310,11 @@ function mytest()
         itemp = 1,
     )
     attention_module = AttentionModule(ac)
-    
-    println("Perception")
+
+    mo = MO(;window=10)
+    granularity_module = GranularityModule(mo, qt.schema)
+
+    println("Pre-attentive Perception")
     @time for _ = 1:10
         step_module!(vision_module)
     end
@@ -319,13 +322,13 @@ function mytest()
     println("Planning")
     @time step_module!(planning_module, vision_module)
 
-    println("Attention")
-    @time for _ = 1:50
-        step_module!(attention_module, vision_module, planning_module)
+    println("Attention Loop")
+
+    for _ = 1:50
+        @time step_module!(attention_module, vision_module, planning_module)
+        @time step_module!(granularity_module, attention_module, vision_module, planning_module)
     end
-
-
-
+    
     best_path_idx, best_path_vec = GranularScenes.best_path(planning_module)
     best_path_qt = get_retval(vision_module.state.samples[best_path_idx])
     path_viz = qt_topdown(best_path_qt, best_path_vec)

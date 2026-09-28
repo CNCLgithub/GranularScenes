@@ -31,6 +31,8 @@ abstract type PerceptionProtocol <: MentalProtocol end
 abstract type PlanningProtocol <: MentalProtocol end
 "Rations resources within inference procedures"
 abstract type AttentionProtocol <: MentalProtocol end
+"Optimizes granularity"
+abstract type GranularityProtocol <: MentalProtocol end
 
 # abstract type PerceptionModule{T<:PerceptionProtocol} <:MentalModule{T} end
 # abstract type PlanningModule{T<:PlanningProtocol} <:MentalModule{T} end
@@ -52,3 +54,4 @@ end
 include("perception/perception.jl")
 include("planning/planning.jl")
 include("attention/attention.jl")
+include("mo/mo.jl")
