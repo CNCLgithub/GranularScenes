@@ -93,8 +93,8 @@ function buffer_allocator(use_cuda::Bool)
     end
 end
 
-function QuadTreeRenderer(;grid_res::Int = 128,
-                          image_res::Tuple{Int,Int} = (512,512),
+function QuadTreeRenderer(;grid_res::Int = 32,
+                          image_res::Tuple{Int,Int} = (256,256),
                           up::SVector{3,Float32} = SVector(0.0f0, 1.0f0, 0.0f0),
                           exposure::Float32 = 1.0f0, voxel_edges::Float32 = 0.005f0,
                           obstacle_height::Int = -1,          # -1 → default grid_res ÷ 6 (Taichi oheight n//6)
@@ -522,36 +522,6 @@ function recompute_bbox!(r::QuadTreeRenderer)
     half = Float32(d) * dx / 2.0f0
     r.bbox[1] = -half; r.bbox[2] = -half; r.bbox[3] = -half
     r.bbox[4] =  half; r.bbox[5] =  half; r.bbox[6] =  half
-
-    # minx = Float32(1e9); maxx = Float32(-1e9)
-    # miny = Float32(1e9); maxy = Float32(-1e9)
-    # minz = Float32(1e9); maxz = Float32(-1e9)
-    # @inbounds for i in 1:n
-    #     w = r.pack_wts[i]
-    #     w == 0.0f0 && continue
-    #     li = r.pack_inds[i]
-    #     col = (li - 1) % d + 1
-    #     row = (li - 1) ÷ d + 1
-    #     # same quadtree→renderer-world mapping as _project_qt_to_grid!
-    #     x = clamp(round(Int, ((col - 0.5) / d - 0.5) * d) + d ÷ 2 + 1, 1, d)
-    #     y = clamp(round(Int, ((row - 0.5) / d - 0.5) * d) + d ÷ 2 + 1, 1, d)
-    #     x = (x - 1 - d÷2) * dx
-    #     y = (y - 1 - d÷2) * dx
-    #     # vertical column: the cell spans y in [0, obstacle_height] (floor to
-    #     # obstacle top); world z-extent comes from obstacle_height below.
-    #     minx = min(minx, x); maxx = max(maxx, x + dx)
-    #     miny = min(miny, y); maxy = max(maxy, y + dx)
-    # end
-    # if minx > maxx   # no leaves → default box around origin
-    #     half = Float32(d) * dx / 2
-    #     minx = miny = -half; maxx = maxy = half
-    # end
-    # # vertical extent: floor at gy=1 (world y = -d/2) rising obstacle_height cells
-    # y_floor = -(Float32(d) * dx / 2)
-    # minz = y_floor
-    # maxz = y_floor + Float32(r.obstacle_height) * dx   # top of the obstacles
-    # r.bbox[1] = minx; r.bbox[2] = miny; r.bbox[3] = minz
-    # r.bbox[4] = maxx; r.bbox[5] = maxy; r.bbox[6] = maxz
     nothing
 end
 

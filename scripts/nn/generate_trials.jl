@@ -1,14 +1,41 @@
-using JSON
 using Rooms
-using PyCall
-using FileIO
+using StaticArrays
 using ProgressMeter
 using GranularScenes
 
 
 include("/project/scripts/stimuli/room_process.jl")
 
-IMG_RES = (128, 128)
+IMG_RES = (256, 256)
+IMG_VAR = 0.001f0
+
+# CAMERA SETTINGS
+cam_height = 50.0f0
+cam_pitch  = -12.0f0
+cam_fov    = 0.56f0
+d = 16
+mid = d ÷ 2
+room_half = d ÷ 2 - 4
+max_room_height = d ÷ 2
+obs_h = 5
+floor_y = 2
+floor_world_y = Float32(floor_y - mid)
+# --- camera scaled to the grid --------------------------------------
+# cam_height slider (5..60) is world units; must stay < d÷2 (bbox top).
+cam_h       = min(cam_height, Float32(max_room_height - 2))
+cam_world_y = floor_world_y + cam_h
+# cam_world_z = Float32(d-2)
+cam_world_z = Float32(-(d-2)) 
+cam_world_x = 0.0f0
+
+pitch_rad   = deg2rad(Float32(cam_pitch))
+# target_dist = Float32(-room_half * 2)
+target_dist = Float32(room_half * 2)
+target_x    = 0.0f0
+target_y    = cam_world_y + target_dist * tan(pitch_rad)
+target_z    = cam_world_z + target_dist
+cam_pos = SVector{3,Float32}(cam_world_x, cam_world_y, cam_world_z)
+look_at = SVector{3,Float32}(target_x, target_y, target_z)
 
 function occupancy_position(r::GridRoom)::Matrix{Float64}
     grid = zeros(Rooms.steps(r))
@@ -68,10 +95,10 @@ end
 
 function main()
     # Parameters
-    # name = "ddp_train_11f_32x32"
-    # n = 10000
-    name = "ddp_test_11f_32x32"
-    n = 16
+    name = "ddp_train_11f_32x32"
+    n = 10000
+    # name = "ddp_test_11f_32x32"
+    # n = 16
 
     hn = Int(n // 2)
     room_dims = (16., 16.)
@@ -88,47 +115,41 @@ function main()
     end
     x = RoomProcess(room_bins, start, doors[1])
 
-    # will store summary of generated rooms here
-    m = Dict(
-        :n => n,
-        :templates => templates,
-        :og_shape => room_bins,
-        :img_res => IMG_RES
-    )
-    out = "/spaths/datasets/$(name)"
-    isdir(out) || mkdir(out)
-
     template = templates[1]
-    ti_scene = TaichiScene(template;
-                           resolution = IMG_RES)
+    renderer = QuadTreeRenderer(
+        ;
+        image_res = IMG_RES,
+        use_cuda = true,
+        wall_mode = true,
+        grid_res = d,
+        obstacle_height = 5,
+        camera_pos = cam_pos,
+        look_at = look_at,
+        fov = cam_fov,
+    )
+
+    out = "/spaths/datasets/$(name).hdf5"
+    writer = DDPSDatasetWriter(out, n)
+    
     @showprogress desc="Sampling door 1" for i = 1:hn
         r = sample_room!(x, doors[1], doors[2])
         occ = occupancy_position(r)
-        # select mitsuba scene
-        _mu = GranularScenes.render(ti_scene, r)
-        img = @pycall _mu.to_numpy()::Array
-        save_trial(out, i, r, img, occ)
+        depth = qt_observe(renderer, r, IMG_VAR)
+        write_trial!(writer, depth, occ)
     end
 
     x = RoomProcess(room_bins, start, doors[2])
     template = templates[2]
-    ti_scene = TaichiScene(template;
-                           resolution = IMG_RES)
-    @showprogress desc="Sampling door 2" for i = hn:n
+    @showprogress desc="Sampling door 2" for i = (hn+1):n
         r = sample_room!(x, doors[1], doors[2])
         occ = occupancy_position(r)
         # select mitsuba scene
-        _mu = GranularScenes.render(ti_scene, r)
-        img = @pycall _mu.to_numpy()::Array
-        save_trial(out, i, r, img, occ)
+        depth = qt_observe(renderer, r, IMG_VAR)
+        write_trial!(writer, depth, occ)
     end
-    
-    m[:img_mu] = zeros(3)
-    m[:img_sd] = ones(3)
 
-    open("$(out)_manifest.json", "w") do f
-        write(f, m |> json)
-    end
+    close(writer)
+    
     return nothing
 end
 
