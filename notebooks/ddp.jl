@@ -72,7 +72,7 @@ md"## Hyperparameters"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000005
 hyper = (
-	batchsize = 32,
+	batchsize = 128,
 	seed = 0,
 	vae_epochs = 5,
 	occ_epochs = 20,
@@ -125,8 +125,15 @@ md"## Data"
 # train_dataloader = load_depth_dataset(; batchsize=hyper.batchsize) |> xdev
 dataset = DDPSDataset("/spaths/datasets/ddp_train_11f_32x32.hdf5")
 
+# ╔═╡ db784acc-7b6f-49df-9509-69678af96c9e
+begin
+	X_all = cat([Float32.(dataset.depth[:, :, :, i]) for i in 1:length(dataset)]...; dims=4)
+	O_all = cat([Float32.(dataset.occ[:, :, :, i])     for i in 1:length(dataset)]...; dims=4)
+end
+
 # ╔═╡ 24af709c-a124-4671-86d0-41cbb4c82a67
-train_dataloader = DataLoader(dataset, batchsize=hyper.batchsize; shuffle=true, partial=false);
+#train_dataloader = DataLoader(dataset, batchsize=hyper.batchsize; shuffle=true, partial=false);
+train_dataloader = DataLoader((X_all, O_all), batchsize=hyper.batchsize; shuffle=true, partial=false)
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000014
 md"## Test set (first 3 scenes)"
@@ -316,6 +323,7 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000011
 # ╟─d1a2b3c4-0001-4000-8000-000000000012
 # ╠═d1a2b3c4-0001-4000-8000-000000000013
+# ╠═db784acc-7b6f-49df-9509-69678af96c9e
 # ╠═24af709c-a124-4671-86d0-41cbb4c82a67
 # ╟─d1a2b3c4-0001-4000-8000-000000000014
 # ╠═d1a2b3c4-0001-4000-8000-000000000015
