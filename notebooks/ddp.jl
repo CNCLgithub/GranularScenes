@@ -133,8 +133,8 @@ md"## Test set (first 3 scenes)"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000015
 begin
-	test_X = xdev(rand(Float32, hyper.image_shape..., 3))
-	test_O = xdev(Float32.(rand(Float32, 16, 16, 1, 3) .> 0.5))
+	test_X = rand(Float32, hyper.image_shape..., 3)
+	test_O = Float32.(rand(Float32, 16, 16, 1, 3) .> 0.5)
 end;
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000030
@@ -163,13 +163,13 @@ begin
 end;
 
 # ╔═╡ 9d2ce5dc-e423-41c6-9353-e1a3c176622a
-viz_forward = @compile model(test_X, train_state.parameters, Lux.testmode(train_state.states));
+viz_forward = @compile donated_args=:none model(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states));
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000017
 begin
 	@printf "=== Initial state (before training) ===\n"
-    (x_rec, occ, μ, logσ²), _ = viz_forward(test_X, train_state.parameters, Lux.testmode(train_state.states))
-    panels = plot_vae_panels(Array(test_X), Array(test_O), Array(x_rec), Array(occ); filepath="viz_epoch.png")
+    (x_rec, occ, μ, logσ²), _ = viz_forward(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
+    panels = plot_vae_panels(test_X, test_O, Array(x_rec), Array(occ))
 end
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000020
@@ -211,9 +211,8 @@ md"### Visualization after stage 1"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000022
 begin
-    (_x_rec, _occ, _μ, _logσ²), _ = viz_forward(test_X, train_state.parameters,
-                                           Lux.testmode(train_state.states))
-    panels_s1 = plot_vae_panels(Array(test_X), Array(test_O), Array(_x_rec), Array(_occ))
+    (_x_rec, _occ, _μ, _logσ²), _ = viz_forward(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
+    panels_s1 = plot_vae_panels(test_X, test_O, Array(_x_rec), Array(_occ))
 	panels_s1
 end
 
