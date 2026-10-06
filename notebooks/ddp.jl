@@ -74,7 +74,7 @@ md"## Hyperparameters"
 hyper = (
 	batchsize = 32,
 	seed = 0,
-	vae_epochs = 1,
+	vae_epochs = 5,
 	occ_epochs = 20,
 	weight_decay = 1.0f-5,
 	learning_rate = 1.0f-3,
@@ -181,13 +181,13 @@ begin
 
 		for (i, (X, _)) in enumerate(train_dataloader)
 			X_dev = xdev(X)
-			@show size(X)
 			(_, loss, _, train_state) = Training.single_train_step!(
 				AutoEnzyme(),
 				(m, p, s, x) -> vae_loss_function(m, p, s, x; β=hyper.β),
 				X_dev,
 				train_state;
 				return_gradients=Val(false),
+				compile_options=Reactant.CompileOptions(donated_args=:none),
 			)
 			loss_total += loss
 			total_samples += size(X, ndims(X))
@@ -220,6 +220,8 @@ end
 md"## Stage 2: Occupancy decoder training (frozen VAE)"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000024
+# ╠═╡ disabled = true
+#=╠═╡
 begin
 	occ_model = model.occ_decoder
 	occ_ps = train_state.parameters.occ_decoder
@@ -227,6 +229,7 @@ begin
 	occ_opt = AdamW(; eta=hyper.occ_learning_rate, lambda=hyper.weight_decay)
 	occ_train_state = Training.TrainState(occ_model, occ_ps, occ_st, occ_opt)
 end
+  ╠═╡ =#
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000025
 begin
