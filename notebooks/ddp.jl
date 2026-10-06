@@ -19,7 +19,7 @@ begin
 	using Revise
 	using GranularScenes
 	import GranularScenes: DepthOccVAE, vae_loss_function, occ_loss_function,
-		load_depth_dataset, DepthOccDataset, viz_test_grid
+		load_depth_dataset, DepthOccDataset, plot_vae_panels
 end
 
 # ╔═╡ 665b3437-0ce9-4818-ad14-32c4a433ee4e
@@ -149,13 +149,6 @@ end
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000016
 md"## Visualization"
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000017
-begin
-	@printf "=== Initial state (before training) ===\n"
-	(panels, _) = viz_test_grid(model, ps, Lux.testmode(st), test_X, test_O)
-	panels
-end
-
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000018
 md"## Stage 1: VAE training"
 
@@ -164,6 +157,17 @@ begin
 	opt = AdamW(; eta=hyper.learning_rate, lambda=hyper.weight_decay)
 	train_state = Training.TrainState(model, ps, st, opt)
 end;
+
+# ╔═╡ d1a2b3c4-0001-4000-8000-000000000017
+begin
+	@printf "=== Initial state (before training) ===\n"
+    viz_forward = @compile model(test_X, train_state.parameters,
+                                 Lux.testmode(train_state.states))
+    
+    (x_rec, occ, μ, logσ²), _ = viz_forward(test_X, train_state.parameters,
+                                           Lux.testmode(train_state.states))
+    panels = plot_vae_panels(Array(test_X), Array(test_O), Array(x_rec), Array(occ); filepath="viz_epoch.png")
+end
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000020
 #=╠═╡
@@ -204,8 +208,9 @@ md"### Visualization after stage 1"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000022
 begin
-	(panels_s1, _) = viz_test_grid(model, train_state.parameters,
-		Lux.testmode(train_state.states), test_X, test_O)
+    (_x_rec, _occ, _μ, _logσ²), _ = viz_forward(test_X, train_state.parameters,
+                                           Lux.testmode(train_state.states), test_X, test_O)
+    panels_s1 = plot_vae_panels(Array(_test_X), Array(_test_O), Array(_x_rec), Array(_occ))
 	panels_s1
 end
 

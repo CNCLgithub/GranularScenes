@@ -209,51 +209,44 @@ end
 # rows = scenes, columns = | GT depth | Recon Depth | GT occupancy | Recon Occ |
 # ---------------------------------------------------------------------------
 """
-    viz_test_grid(model, ps, st, X, O; filepath=nothing)
+    gray01(A) -> Matrix{Gray}
 
-Build a 3x4 image grid for the first 3 scenes of (X, O). X is Float32
-(256, 256, 1, B), O is Float32 (16, 16, 1, B). Returns a matrix of
-Plots-compatible image objects; if `filepath` is given, also writes a PNG.
-
-Requires `Plots` to be loaded by the caller (the Pluto notebook does this).
-Returns the raw model outputs too.
+Clamp a Float32 matrix to [0, 1] and wrap it as a `Gray` image
+(`Matrix{Gray{Float32}}`), displayable in Pluto and renderable via
+ImageIO/FileIO (`save("x.png", img)`).
 """
-function viz_test_grid(model, ps, st, X, O; n_scenes=3, filepath=nothing)
-    n = min(n_scenes, size(X, ndims(X)))
-    (x_rec, occ, μ, logσ²), _ = model(X, ps, st)
+function gray01(A::AbstractMatrix{<:Real})
+    return Gray.(clamp.(A, 0.0f0, 1.0f0))
+end
 
-    X_cpu = Array(X)
-    O_cpu = Array(O)
+"""
+    occ_gray(O; up) -> Matrix{Gray}
 
-    x_rec_cpu = Array(x_rec)
-    occ_cpu = Array(occ)
-
-    # Assemble the panel images: rows are scenes, columns are
+Occupancy map as a grayscale image, nearest-neighbor upsampled by an
+integer factor `up` (16 for a 16x16 grid -> 256x256) so it can be tiled
+into the panel next to the 256x256 depth maps.
+"""
+function occ_gray(O::AbstractMatrix{<:Real}; up::Int=16)
+    big = repeat(clamp.(O, 0.0f0, 1.0f0); inner=(up, up))
+    return Gray.(big)
+end
+function plot_vae_panels(X_cpu, O_cpu, x_rec_cpu, occ_cpu; filepath=nothing)
+    n = size(X_cpu, 4)
+    # Assemble the panel image: rows are scenes, columns are
     # [GT depth, Recon depth, GT occ, Recon occ]
-    gt_depth_imgs   = [X_cpu[:, :, 1, i]  for i in 1:n]
-    rec_depth_imgs  = [x_rec_cpu[:, :, 1, i] for i in 1:n]
-    gt_occ_imgs     = [O_cpu[:, :, 1, i]  for i in 1:n]
-    rec_occ_imgs    = [occ[:, :, 1, i] for i in 1:n]
+    panel = hcat(
+        vcat([gray01(X_cpu[:, :, 1, i])   for i in 1:n]...),
+        vcat([gray01(x_rec_cpu[:, :, 1, i]) for i in 1:n]...),
+        vcat([occ_gray(O_cpu[:, :, 1, i]; up=16) for i in 1:n]...),
+        vcat([occ_gray(occ_cpu[:, :, 1, i]; up=16) for i in 1:n]...),
+    )
 
     if filepath !== nothing
-        # Plots must be loaded by the caller (the Pluto notebook does this).
         try
-            panel = plot(layout=(n, 4), size=(800, 200*n), margin=2Plots.mm)
-            for i in 1:n
-                plot!(panel[i, 1], gt_depth_imgs[i]; title="GT depth",
-                      aspect_ratio=:equal, ticks=false)
-                plot!(panel[i, 2], rec_depth_imgs[i]; title="Recon depth",
-                      aspect_ratio=:equal, ticks=false)
-                heatmap!(panel[i, 3], gt_occ_imgs[i]; title="GT occ",
-                        aspect_ratio=:equal, ticks=false, color=:grays)
-                heatmap!(panel[i, 4], rec_occ_imgs[i]; title="Recon occ",
-                        aspect_ratio=:equal, ticks=false, color=:grays)
-            end
-            savefig(panel, filepath)
+            save(filepath, panel)
         catch e
-            @warn "Plots not available; skipping PNG write" exception=e
+            @warn "ImageIO not available; skipping PNG write" exception=e
         end
     end
-
-    return (gt_depth_imgs, rec_depth_imgs, gt_occ_imgs, rec_occ_imgs), (x_rec, occ, μ, logσ²)
+    return panel
 end
