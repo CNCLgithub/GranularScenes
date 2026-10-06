@@ -74,7 +74,7 @@ md"## Hyperparameters"
 hyper = (
 	batchsize = 32,
 	seed = 0,
-	vae_epochs = 50,
+	vae_epochs = 1,
 	occ_epochs = 20,
 	weight_decay = 1.0f-5,
 	learning_rate = 1.0f-3,
@@ -82,11 +82,11 @@ hyper = (
 	β = 1.0f0,
 	max_num_filters = 64,
 	image_shape = (256, 256, 1),
-)
+);
 
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000006
-rng = Xoshiro(); Random.seed!(rng, hyper.seed)
+rng = Xoshiro(); Random.seed!(rng, hyper.seed);
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000029
 # ╠═╡ disabled = true
@@ -135,7 +135,7 @@ md"## Test set (first 3 scenes)"
 begin
 	test_X = xdev(rand(Float32, hyper.image_shape..., 3))
 	test_O = xdev(Float32.(rand(Float32, 16, 16, 1, 3) .> 0.5))
-end
+end;
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000030
 begin
@@ -162,14 +162,13 @@ begin
 	train_state = Training.TrainState(model, ps, st, opt)
 end;
 
+# ╔═╡ 9d2ce5dc-e423-41c6-9353-e1a3c176622a
+viz_forward = @compile model(test_X, train_state.parameters, Lux.testmode(train_state.states));
+
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000017
 begin
 	@printf "=== Initial state (before training) ===\n"
-    viz_forward = @compile model(test_X, train_state.parameters,
-                                 Lux.testmode(train_state.states))
-    
-    (x_rec, occ, μ, logσ²), _ = viz_forward(test_X, train_state.parameters,
-                                           Lux.testmode(train_state.states))
+    (x_rec, occ, μ, logσ²), _ = viz_forward(test_X, train_state.parameters, Lux.testmode(train_state.states))
     panels = plot_vae_panels(Array(test_X), Array(test_O), Array(x_rec), Array(occ); filepath="viz_epoch.png")
 end
 
@@ -320,6 +319,7 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000015
 # ╠═d1a2b3c4-0001-4000-8000-000000000030
 # ╟─d1a2b3c4-0001-4000-8000-000000000016
+# ╠═9d2ce5dc-e423-41c6-9353-e1a3c176622a
 # ╠═d1a2b3c4-0001-4000-8000-000000000017
 # ╟─d1a2b3c4-0001-4000-8000-000000000018
 # ╠═d1a2b3c4-0001-4000-8000-000000000019

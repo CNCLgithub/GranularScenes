@@ -115,8 +115,8 @@ end
 function Base.getindex(ds::DDPSDataset, idxs::AbstractVector{<:Integer})
     # d = Float32.(ds.depth[:, :, :, idxs])
     # o = Float32.(ds.occ[:, :, :, idxs])
-    d = Float32.(read(ds.depth, :, :, :, idxs)
-    o = Float32.(read(ds.occ, :, :, :, idxs)
+    d = [ds.depth[:, :, :, i] for i in idxs]          # Hyperslab read per index
+    o = [ds.occ[:, :, :, i] for i in idxs]
     return (d, o)
 end
 
@@ -125,4 +125,19 @@ Base.close(ds::DDPSDataset) = close(ds.file)
 function Base.iterate(ds::DDPSDataset, i::Int = 1)
     i > length(ds) && return nothing
     (ds[i], i + 1)
+end
+
+using MLUtils
+
+MLUtils.numobs(ds::DDPSDataset) = length(ds)
+
+function MLUtils.getobs(ds::DDPSDataset, idx::Integer)
+    return (reshape(Float32.(ds.depth[:, :, :, idx]), DEPTH_SIZE..., 1),
+            reshape(Float32.(ds.occ[:, :, :, idx]), OCC_SIZE..., 1))
+end
+
+function MLUtils.getobs(ds::DDPSDataset, idxs::AbstractVector{<:Integer})
+    d = Float32.(cat([ds.depth[:, :, :, i] for i in idxs]...; dims=4))
+    o = Float32.(cat([ds.occ[:, :, :, i] for i in idxs]...; dims=4))
+    return (d, o)
 end
