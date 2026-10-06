@@ -15,6 +15,7 @@ begin
 
 	using Lux, Reactant, Enzyme, Optimisers, MLUtils, Random, Printf, Statistics
 	using PlutoUI
+	using MLUtils
 	# using Plots
 	using Revise
 	using GranularScenes
@@ -122,7 +123,10 @@ md"## Data"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000013
 # train_dataloader = load_depth_dataset(; batchsize=hyper.batchsize) |> xdev
-train_dataloader = DDPSDataset("/spaths/datasets/ddp_train_11f_32x32.hdf5") |> xdev
+dataset = DDPSDataset("/spaths/datasets/ddp_train_11f_32x32.hdf5")
+
+# ╔═╡ 24af709c-a124-4671-86d0-41cbb4c82a67
+train_dataloader = DataLoader(dataset, batchsize=hyper.batchsize; shuffle=true, partial=false);
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000014
 md"## Test set (first 3 scenes)"
@@ -170,7 +174,6 @@ begin
 end
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000020
-#=╠═╡
 begin
 	for epoch in 1:hyper.vae_epochs
 		loss_total = 0.0f0
@@ -178,10 +181,12 @@ begin
 		start_time = time()
 
 		for (i, (X, _)) in enumerate(train_dataloader)
+			X_dev = xdev(X)
+			@show size(X)
 			(_, loss, _, train_state) = Training.single_train_step!(
 				AutoEnzyme(),
 				(m, p, s, x) -> vae_loss_function(m, p, s, x; β=hyper.β),
-				X,
+				X_dev,
 				train_state;
 				return_gradients=Val(false),
 			)
@@ -190,18 +195,17 @@ begin
 		end
 
 		@printf "[stage 1] Epoch %d, Train Loss: %.7f, Time: %.4fs\n" epoch (loss_total / length(train_dataloader)) (time() - start_time)
-		with_logger(logger) do
-			log_value(0, "train/vae_loss", loss_total / length(train_dataloader))
-			# Latent state per test scene: 32x32 heatmap of μ and logσ².
-			(μ, logσ²) = test_latents(train_state.parameters, train_state.states)
-			for k in axes(μ, 4)
-				log_image(0, "z/mean/scene$(k)", μ[:, :, 1, k])   # 32x32 heatmap
-				log_image(0, "z/logvar/scene$(k)", logσ²[:, :, 1, k])
-			end
-		end
+		# with_logger(logger) do
+		# 	log_value(0, "train/vae_loss", loss_total / length(train_dataloader))
+		# 	# Latent state per test scene: 32x32 heatmap of μ and logσ².
+		# 	(μ, logσ²) = test_latents(train_state.parameters, train_state.states)
+		# 	for k in axes(μ, 4)
+		# 		log_image(0, "z/mean/scene$(k)", μ[:, :, 1, k])   # 32x32 heatmap
+		# 		log_image(0, "z/logvar/scene$(k)", logσ²[:, :, 1, k])
+		# 	end
+		# end
 	end
 end
-  ╠═╡ =#
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000021
 md"### Visualization after stage 1"
@@ -209,8 +213,8 @@ md"### Visualization after stage 1"
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000022
 begin
     (_x_rec, _occ, _μ, _logσ²), _ = viz_forward(test_X, train_state.parameters,
-                                           Lux.testmode(train_state.states), test_X, test_O)
-    panels_s1 = plot_vae_panels(Array(_test_X), Array(_test_O), Array(_x_rec), Array(_occ))
+                                           Lux.testmode(train_state.states))
+    panels_s1 = plot_vae_panels(Array(test_X), Array(test_O), Array(_x_rec), Array(_occ))
 	panels_s1
 end
 
@@ -311,6 +315,7 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000011
 # ╟─d1a2b3c4-0001-4000-8000-000000000012
 # ╠═d1a2b3c4-0001-4000-8000-000000000013
+# ╠═24af709c-a124-4671-86d0-41cbb4c82a67
 # ╟─d1a2b3c4-0001-4000-8000-000000000014
 # ╠═d1a2b3c4-0001-4000-8000-000000000015
 # ╠═d1a2b3c4-0001-4000-8000-000000000030
@@ -321,7 +326,7 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000020
 # ╟─d1a2b3c4-0001-4000-8000-000000000021
 # ╠═d1a2b3c4-0001-4000-8000-000000000022
-# ╠═d1a2b3c4-0001-4000-8000-000000000023
+# ╟─d1a2b3c4-0001-4000-8000-000000000023
 # ╠═d1a2b3c4-0001-4000-8000-000000000024
 # ╠═d1a2b3c4-0001-4000-8000-000000000025
 # ╠═d1a2b3c4-0001-4000-8000-000000000026

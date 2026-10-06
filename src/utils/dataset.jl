@@ -103,7 +103,7 @@ function DDPSDataset(path::AbstractString)
     return DDPSDataset(f, f["depth"], f["occ"])
 end
 
-Base.length(ds::DDPSDataset) = read(attrs(ds.depth)["N"])
+Base.length(ds::DDPSDataset) = attrs(ds.depth)["N"]
 
 function Base.getindex(ds::DDPSDataset, i::Integer)
     d = Float32.(ds.depth[:, :, :, i])   # (256, 256, 1)
@@ -113,9 +113,16 @@ end
 
 # Batched access (used by DataLoader when it requests a vector of indices).
 function Base.getindex(ds::DDPSDataset, idxs::AbstractVector{<:Integer})
-    d = Float32.(ds.depth[:, :, :, idxs])
-    o = Float32.(ds.occ[:, :, :, idxs])
+    # d = Float32.(ds.depth[:, :, :, idxs])
+    # o = Float32.(ds.occ[:, :, :, idxs])
+    d = Float32.(read(ds.depth, :, :, :, idxs)
+    o = Float32.(read(ds.occ, :, :, :, idxs)
     return (d, o)
 end
 
 Base.close(ds::DDPSDataset) = close(ds.file)
+
+function Base.iterate(ds::DDPSDataset, i::Int = 1)
+    i > length(ds) && return nothing
+    (ds[i], i + 1)
+end
