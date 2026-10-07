@@ -83,6 +83,7 @@ hyper = (
 	β = 0.001f0,
 	max_num_filters = 64,
 	image_shape = (256, 256, 1),
+	latent_dim = 32,
 );
 
 
@@ -105,7 +106,8 @@ md"## Model"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000008
 model = DepthOccVAE(rng; 
-					image_shape=hyper.image_shape, max_num_filters=hyper.max_num_filters)
+					image_shape=hyper.image_shape, max_num_filters=hyper.max_num_filters,
+					latent_dim=hyper.latent_dim)
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000009
 begin
@@ -160,8 +162,8 @@ begin
 	# grids (32, 32, 1, 3) for μ and logσ², on the CPU for logging/plotting.
 	function test_latents(parameters, states)
 		st_enc = Lux.testmode(states.encoder)
-		(μ, logσ², _), _ = model.encoder(test_X, parameters.encoder, st_enc)
-		return cdev(μ), cdev(logσ²)
+		(μ, σ, _), _ = model.encoder(test_X, parameters.encoder, st_enc)
+		return cdev(μ), cdev(σ)   # (latent_dim, 3) each; flat latent, not a grid
 	end
 
 	"helper: test_latents"
@@ -169,6 +171,62 @@ end
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000016
 md"## Visualization"
+
+# ╔═╡ 1b3e1292-00f3-4370-995a-7430b6ef94d9
+begin
+	ps_d, st_d = Lux.setup(Xoshiro(0), model.depth_decoder)
+	z0 = randn(Float32, 32, 2)
+	size(first(model.depth_decoder(z0, ps_d, st_d)))   # expect (256, 256, 1, 2)
+	
+end
+
+# ╔═╡ 6344e97c-16f3-4edf-8d08-3b11dab9b88f
+
+
+# ╔═╡ 8643bdf9-d83e-49f6-badd-8b4d866d26c5
+
+
+# ╔═╡ eb419fd3-4f3e-4430-9c48-fcdc150bec9c
+
+
+# ╔═╡ 55c9547e-a02e-4996-8fe5-35745ae40e9e
+
+
+# ╔═╡ 92e9c803-88b3-4388-a203-60239bd69ac8
+
+
+# ╔═╡ c1919f27-760d-4a66-a047-991e1f711d7b
+
+
+# ╔═╡ 61dc24e8-260e-4d20-afa6-11166081033b
+
+
+# ╔═╡ b2d5071d-1e91-4c66-bcb4-bf4c3652afeb
+
+
+# ╔═╡ 04620115-1c47-47d1-b924-47efdf9330c8
+
+
+# ╔═╡ cf3b6cbe-34ac-4ab6-a53f-c2068610b4da
+
+
+# ╔═╡ c708c77c-176d-4096-a2a1-f90cb21e398f
+
+
+# ╔═╡ 4acb0538-5461-4dea-8708-eeb80d79894e
+
+
+# ╔═╡ e8066cb6-a17a-4ab0-905b-1c1c5d7d32f5
+
+
+# ╔═╡ 9e233001-4d0c-44a5-8288-fa54e660eff9
+
+
+# ╔═╡ 4beb6deb-5723-47e6-8cb0-282f03918951
+
+
+# ╔═╡ cdae1135-0d9c-401b-910a-7209a6eabd15
+
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000018
 md"## Stage 1: VAE training"
@@ -182,6 +240,14 @@ end;
 
 # ╔═╡ 9d2ce5dc-e423-41c6-9353-e1a3c176622a
 viz_forward = @compile donated_args=:none model(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states));
+
+# ╔═╡ 78ecd4af-2b07-465e-8ac7-e14d28e35781
+begin
+	probe_compile = @compile donated_args=:none model(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
+	(p_xrec, p_occ, p_μ, p_logσ²) = first(probe_compile(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states)))
+	@show size(p_xrec)
+end
+
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000017
 begin
@@ -350,6 +416,24 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000030
 # ╟─d1a2b3c4-0001-4000-8000-000000000016
 # ╠═9d2ce5dc-e423-41c6-9353-e1a3c176622a
+# ╠═1b3e1292-00f3-4370-995a-7430b6ef94d9
+# ╠═78ecd4af-2b07-465e-8ac7-e14d28e35781
+# ╠═6344e97c-16f3-4edf-8d08-3b11dab9b88f
+# ╠═8643bdf9-d83e-49f6-badd-8b4d866d26c5
+# ╠═eb419fd3-4f3e-4430-9c48-fcdc150bec9c
+# ╠═55c9547e-a02e-4996-8fe5-35745ae40e9e
+# ╠═92e9c803-88b3-4388-a203-60239bd69ac8
+# ╠═c1919f27-760d-4a66-a047-991e1f711d7b
+# ╠═61dc24e8-260e-4d20-afa6-11166081033b
+# ╠═b2d5071d-1e91-4c66-bcb4-bf4c3652afeb
+# ╠═04620115-1c47-47d1-b924-47efdf9330c8
+# ╠═cf3b6cbe-34ac-4ab6-a53f-c2068610b4da
+# ╠═c708c77c-176d-4096-a2a1-f90cb21e398f
+# ╠═4acb0538-5461-4dea-8708-eeb80d79894e
+# ╠═e8066cb6-a17a-4ab0-905b-1c1c5d7d32f5
+# ╠═9e233001-4d0c-44a5-8288-fa54e660eff9
+# ╠═4beb6deb-5723-47e6-8cb0-282f03918951
+# ╠═cdae1135-0d9c-401b-910a-7209a6eabd15
 # ╠═d1a2b3c4-0001-4000-8000-000000000017
 # ╟─d1a2b3c4-0001-4000-8000-000000000018
 # ╠═d1a2b3c4-0001-4000-8000-000000000019
