@@ -17,6 +17,7 @@ begin
 	using PlutoUI
 	using MLUtils
 	# using Plots
+	import HDF5
 	using Revise
 	using GranularScenes
 	import GranularScenes: DepthOccVAE, vae_loss_function, occ_loss_function,
@@ -74,12 +75,12 @@ md"## Hyperparameters"
 hyper = (
 	batchsize = 128,
 	seed = 0,
-	vae_epochs = 5,
+	vae_epochs = 20,
 	occ_epochs = 20,
 	weight_decay = 1.0f-5,
 	learning_rate = 1.0f-3,
 	occ_learning_rate = 1.0f-3,
-	β = 1.0f0,
+	β = 0.001f0,
 	max_num_filters = 64,
 	image_shape = (256, 256, 1),
 );
@@ -127,9 +128,12 @@ dataset = DDPSDataset("/spaths/datasets/ddp_train_11f_32x32.hdf5")
 
 # ╔═╡ db784acc-7b6f-49df-9509-69678af96c9e
 begin
-	X_all = cat([Float32.(dataset.depth[:, :, :, i]) for i in 1:length(dataset)]...; dims=4)
-	O_all = cat([Float32.(dataset.occ[:, :, :, i])     for i in 1:length(dataset)]...; dims=4)
-end
+	X_all = Float32.(HDF5.read(dataset.depth, Float32, :, :, :, :))   # single hyperslab read of the whole array
+	x_min, x_max = extrema(X_all)
+	X_all .-= x_min
+	X_all .*= 1.0f0 / x_max
+	O_all = Float32.(HDF5.read(dataset.occ, UInt8, :, :, :, :))
+end;
 
 # ╔═╡ 24af709c-a124-4671-86d0-41cbb4c82a67
 #train_dataloader = DataLoader(dataset, batchsize=hyper.batchsize; shuffle=true, partial=false);
@@ -140,7 +144,7 @@ md"## Test set (first 3 scenes)"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000015
 begin
-	test_X = rand(Float32, hyper.image_shape..., 3)
+	test_X = X_all[:, :, :, 1:3]
 	test_O = Float32.(rand(Float32, 16, 16, 1, 3) .> 0.5)
 end;
 
