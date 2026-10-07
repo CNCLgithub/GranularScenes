@@ -139,6 +139,12 @@ end;
 #train_dataloader = DataLoader(dataset, batchsize=hyper.batchsize; shuffle=true, partial=false);
 train_dataloader = DataLoader((X_all, O_all), batchsize=hyper.batchsize; shuffle=true, partial=false)
 
+# ╔═╡ be3838c5-9f30-4fce-9472-b527199c9838
+function vae_loss_with_β(model, ps, st, X)
+    return vae_loss_function(model, ps, st, X; β=hyper.β)
+end
+
+
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000014
 md"## Test set (first 3 scenes)"
 
@@ -190,9 +196,9 @@ typeof(train_state)
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000020
 begin
 	for epoch in 1:hyper.vae_epochs
-		loss_total = 0.0f0
-		recon_totol = 0.0f0
-		kl_total = 0.0f0
+		loss_total = xdev(0.0f0)
+		recon_total = xdev(0.0f0)
+		kl_total = xdev(0.0f0)
 		total_samples = 0
 		start_time = time()
 
@@ -200,20 +206,20 @@ begin
 			X_dev = xdev(X)
 			(_, loss, aux, _train_state) = Training.single_train_step!(
 				AutoEnzyme(),
-				(m, p, s, x) -> vae_loss_function(m, p, s, x; β=hyper.β),
+				vae_loss_with_β,
 				X_dev,
 				train_state_ref[];
 				return_gradients=Val(false),
 				compile_options=Reactant.CompileOptions(donated_args=:none),
 			)
 			train_state_ref[] = _train_state
-			  loss_total    += Float32(loss)
-    	    recon_total   += Array(aux.depth_loss)[1]
-    	    kl_total      += Array(aux.kldiv_loss)[1]
+			  loss_total    += loss
+    	    recon_total   += aux.depth_loss
+    	    kl_total      += aux.kldiv_loss
 		    total_samples += size(X, ndims(X))
 		end
 
-		@printf "[stage 1] Epoch %d, Train Loss: %.7f, Time: %.4fs\n" epoch (loss_total / length(train_dataloader)) (time() - start_time)
+		@printf "[stage 1] Epoch %d, Train Loss: %.7f, Time: %.4fs\n" epoch (Float32(loss_total) / length(train_dataloader)) (time() - start_time)
 		# with_logger(logger) do
 		# 	log_value(0, "train/vae_loss", loss_total / length(train_dataloader))
 		# 	# Latent state per test scene: 32x32 heatmap of μ and logσ².
@@ -226,15 +232,12 @@ begin
 	end
 end
 
-# ╔═╡ 4da3be8c-d6d9-42a6-a437-2a92aaa812d0
-
-
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000021
 md"### Visualization after stage 1"
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000022
 begin
-    (_x_rec, _occ, _μ, _logσ²), _ = viz_forward(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
+    (_x_rec, _occ, _μ, _logσ²), _ = viz_forward(xdev(test_X), train_state_ref[].parameters, Lux.testmode(train_state_ref[].states))
     panels_s1 = plot_vae_panels(test_X, test_O, Array(_x_rec), Array(_occ))
 	panels_s1
 end
@@ -341,6 +344,7 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000013
 # ╠═db784acc-7b6f-49df-9509-69678af96c9e
 # ╠═24af709c-a124-4671-86d0-41cbb4c82a67
+# ╠═be3838c5-9f30-4fce-9472-b527199c9838
 # ╟─d1a2b3c4-0001-4000-8000-000000000014
 # ╠═d1a2b3c4-0001-4000-8000-000000000015
 # ╠═d1a2b3c4-0001-4000-8000-000000000030
@@ -351,7 +355,6 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000019
 # ╠═9083bf54-cc23-4b18-91d4-2ce4d2444bf6
 # ╠═d1a2b3c4-0001-4000-8000-000000000020
-# ╠═4da3be8c-d6d9-42a6-a437-2a92aaa812d0
 # ╟─d1a2b3c4-0001-4000-8000-000000000021
 # ╠═d1a2b3c4-0001-4000-8000-000000000022
 # ╟─d1a2b3c4-0001-4000-8000-000000000023

@@ -165,7 +165,7 @@ function vae_loss_function(model, ps, st, X; β=1.0f0)
     kldiv_loss = kldiv_per_cell(μ, logσ²)
     loss = depth_loss + β * kldiv_loss
     return loss, (; encoder=st_enc, depth_decoder=st_d, st.occ_decoder),
-           (; x_rec, μ, logσ², depth_loss, kldiv_loss)
+           (; depth_loss, kldiv_loss)
 end
 
 function occ_loss_function(model, ps, st, (z, O))
