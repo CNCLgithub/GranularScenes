@@ -172,6 +172,9 @@ end
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000016
 md"## Visualization"
 
+# ╔═╡ 2cf4adf7-e368-4ee0-82ee-8a20b373bd59
+@show model.depth_decoder.layers.z_head
+
 # ╔═╡ 1b3e1292-00f3-4370-995a-7430b6ef94d9
 begin
 	ps_d, st_d = Lux.setup(Xoshiro(0), model.depth_decoder)
@@ -198,6 +201,23 @@ end;
 
 # ╔═╡ 9d2ce5dc-e423-41c6-9353-e1a3c176622a
 viz_forward = @compile donated_args=:none model(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states));
+
+# ╔═╡ 70cd92f5-42dd-421b-b8f1-6a85978c4343
+begin
+	using Reactant: @code_hlo
+	hlo = @code_hlo model(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
+	io = IOBuffer(); show(io, hlo); String(take!(io))   # search for the reshape / broadcast dims
+	hlo_str = sprint(show, hlo)
+	@show occursin("16384", hlo_str)              # true ⇒ trace has the Dense head
+	@show occursin("32x32x16", hlo_str)           # reshape to grid (old: 16x16)
+end
+
+# ╔═╡ a595671f-fc46-49ec-9d1a-d8e4885cefdb
+begin
+out, _ = viz_forward(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
+@show size(Array(first(out)))   # 256? or 128?
+	
+end
 
 # ╔═╡ 78ecd4af-2b07-465e-8ac7-e14d28e35781
 begin
@@ -374,6 +394,9 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000030
 # ╟─d1a2b3c4-0001-4000-8000-000000000016
 # ╠═9d2ce5dc-e423-41c6-9353-e1a3c176622a
+# ╠═70cd92f5-42dd-421b-b8f1-6a85978c4343
+# ╠═a595671f-fc46-49ec-9d1a-d8e4885cefdb
+# ╠═2cf4adf7-e368-4ee0-82ee-8a20b373bd59
 # ╠═1b3e1292-00f3-4370-995a-7430b6ef94d9
 # ╠═78ecd4af-2b07-465e-8ac7-e14d28e35781
 # ╠═f19865e5-06a5-474c-a763-f469f7b31e9d
