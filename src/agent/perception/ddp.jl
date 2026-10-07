@@ -127,10 +127,10 @@ end
     occ_decoder <: AbstractLuxLayer
 end
 
-function DepthOccVAE(rng=Random.default_rng(); image_shape::Dims{3},
-                     max_num_filters::Int, latent_dim::Int=32)
+function DepthOccVAE(rng=Random.default_rng(); image_shape::Dims{3}, max_num_filters::Int,
+                     latent_dim::Int=32, grid_hw::Tuple{Int,Int}=(32, 32))
     enc = encoder(rng; image_shape, max_num_filters, latent_dim)
-    depth_dec = depth_decoder(; max_num_filters, latent_dim)
+    depth_dec = depth_decoder(; max_num_filters, latent_dim, grid_hw)
     occ_dec = occupancy_decoder(; max_num_filters, latent_dim)
     return DepthOccVAE(enc, depth_dec, occ_dec)
 end
