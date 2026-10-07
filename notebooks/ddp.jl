@@ -75,7 +75,7 @@ md"## Hyperparameters"
 hyper = (
 	batchsize = 128,
 	seed = 0,
-	vae_epochs = 20,
+	vae_epochs = 10,
 	occ_epochs = 20,
 	weight_decay = 1.0f-5,
 	learning_rate = 1.0f-3,
@@ -171,6 +171,7 @@ md"## Stage 1: VAE training"
 begin
 	opt = AdamW(; eta=hyper.learning_rate, lambda=hyper.weight_decay)
 	train_state = Training.TrainState(model, ps, st, opt)
+	train_state_ref = Ref{Lux.Training.TrainState}(train_state)
 end;
 
 # ╔═╡ 9d2ce5dc-e423-41c6-9353-e1a3c176622a
@@ -183,25 +184,33 @@ begin
     panels = plot_vae_panels(test_X, test_O, Array(x_rec), Array(occ))
 end
 
+# ╔═╡ 9083bf54-cc23-4b18-91d4-2ce4d2444bf6
+typeof(train_state)
+
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000020
 begin
 	for epoch in 1:hyper.vae_epochs
 		loss_total = 0.0f0
+		recon_totol = 0.0f0
+		kl_total = 0.0f0
 		total_samples = 0
 		start_time = time()
 
 		for (i, (X, _)) in enumerate(train_dataloader)
 			X_dev = xdev(X)
-			(_, loss, _, train_state) = Training.single_train_step!(
+			(_, loss, aux, _train_state) = Training.single_train_step!(
 				AutoEnzyme(),
 				(m, p, s, x) -> vae_loss_function(m, p, s, x; β=hyper.β),
 				X_dev,
-				train_state;
+				train_state_ref[];
 				return_gradients=Val(false),
 				compile_options=Reactant.CompileOptions(donated_args=:none),
 			)
-			loss_total += loss
-			total_samples += size(X, ndims(X))
+			train_state_ref[] = _train_state
+			  loss_total    += Float32(loss)
+    	    recon_total   += Array(aux.depth_loss)[1]
+    	    kl_total      += Array(aux.kldiv_loss)[1]
+		    total_samples += size(X, ndims(X))
 		end
 
 		@printf "[stage 1] Epoch %d, Train Loss: %.7f, Time: %.4fs\n" epoch (loss_total / length(train_dataloader)) (time() - start_time)
@@ -216,6 +225,9 @@ begin
 		# end
 	end
 end
+
+# ╔═╡ 4da3be8c-d6d9-42a6-a437-2a92aaa812d0
+
 
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000021
 md"### Visualization after stage 1"
@@ -337,7 +349,9 @@ end
 # ╠═d1a2b3c4-0001-4000-8000-000000000017
 # ╟─d1a2b3c4-0001-4000-8000-000000000018
 # ╠═d1a2b3c4-0001-4000-8000-000000000019
+# ╠═9083bf54-cc23-4b18-91d4-2ce4d2444bf6
 # ╠═d1a2b3c4-0001-4000-8000-000000000020
+# ╠═4da3be8c-d6d9-42a6-a437-2a92aaa812d0
 # ╟─d1a2b3c4-0001-4000-8000-000000000021
 # ╠═d1a2b3c4-0001-4000-8000-000000000022
 # ╟─d1a2b3c4-0001-4000-8000-000000000023
