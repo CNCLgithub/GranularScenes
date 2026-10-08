@@ -13,9 +13,9 @@ using Flux: state
 import CUDA
 
 const DATA    = get(ENV, "DDP_DATA",   "/spaths/datasets/ddp_train_11f_32x32.hdf5")
-const EPOCHS  = parse(Int,   get(ENV, "DDP_EPOCHS", "2"))
-const BATCH   = parse(Int,   get(ENV, "DDP_BATCH",  "32"))
-const BETA    = parse(Float32, get(ENV, "DDP_BETA", "0.001"))
+const EPOCHS  = parse(Int,   get(ENV, "DDP_EPOCHS", "30"))
+const BATCH   = parse(Int,   get(ENV, "DDP_BATCH",  "64"))
+const BETA    = parse(Float32, get(ENV, "DDP_BETA", "0.01"))
 const LR      = parse(Float32, get(ENV, "DDP_LR",   "1e-3"))
 const HIDDEN  = 16
 const LATENT  = 32
@@ -155,7 +155,7 @@ function main()
     # --- quick check: variance explained by the reconstructions ---
     x = X[:, :, :, 1:min(256, N)] |> dev
     μ, σ, x̂ = forward(m, x, rng)
-    resid = mean((cpu(x̂) .- x) .^ 2)
+    resid = mean((cpu(x̂) .- cpu(x)) .^ 2)   # both operands host-side
     @printf "recon MSE on first %d samples: %.6f ; var(X) = %.6f ; variance explained = %.1f%%\n" min(256, N) resid var(X) 100f0*(1 - resid/var(X))
 
 end
