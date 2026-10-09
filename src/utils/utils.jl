@@ -29,7 +29,7 @@ function draw_mat(m::Matrix,
                   c2=colorant"white")
     m = clamp.(m, 0.0, 1.0)
     img = weighted_color_mean.(m, c2, c1)
-    img = rotate ? rotr90(img, 3) : img
+    img = rotate ? rotr90(img, 1) : img
     return img
 end
 

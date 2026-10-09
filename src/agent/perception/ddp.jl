@@ -74,8 +74,10 @@ function DepthVAE(rng::AbstractRNG=Random.default_rng())
     return DepthVAE(encoder, mu, scale, decoder)
 end
 
-encode(m::DepthVAE, x::AbstractArray{Float32,4}) =
-    (m.mu(m.encoder(x)), softplus.(m.scale(m.encoder(x))) .+ 1f-8)
+function encode(m::DepthVAE, x::AbstractArray{Float32,4})
+    enc = m.encoder(x)
+    (m.mu(enc), softplus.(m.scale(enc)) .+ 1f-8)
+end
 
 # Reparameterized sampling; eps drawn on device (CUDA.randn when available).
 # The RNG draw is cut from the AD graph with Zygote.@ignore — gradients flow
@@ -178,11 +180,6 @@ end
 "Occupancy probability grid at the quadtree render resolution (d x d)."
 function occ_grid(ddp_params::DataDrivenState, img,
                   d::Int64)
-    # img: rendered depth image (H, W[, 1]) in [0, 1]
-    # x = Float32.(img)
-    # x = clamp!(x, zero(Float32), one(Float32))
-    # x = permutedims(x, (2, 1, 3))       # (W, H, 1): column-major grid ordering
-    # x = reshape(x, size(x, 1), size(x, 2), 1, 1)
     μ, _ = GranularScenes.encode(ddp_params.vae, img)
     occ = GranularScenes.decode_occ(ddp_params.occ, μ)   # (16, 16, 1, 1)
     occ = dropdims(occ; dims = (3, 4))                   # (16, 16)
@@ -213,7 +210,6 @@ function qt_from_state(var::Float64, state::Matrix{<:Real},
         data = state[idx[1], idx[2]]
         μ = mean(data)
         sd = prod(size(data)) == 1 ? 0.0 : std(data; mean = μ)
-        @show sd
         split = n.depth < min_depth || (sd > var && n.depth < max_depth)
         if split
             for i in 1:4
@@ -235,6 +231,7 @@ function qt_ddp(ddp_params::DataDrivenState,
                 min_depth::Int64 = 1,
                 max_depth::Int64 = 5)
     occ = Array(occ_grid(ddp_params, img, 32))
+    display_mat(occ)
     qt_from_state(ddp_params.var, occ, max_depth)
 end
 

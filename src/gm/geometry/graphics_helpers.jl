@@ -41,8 +41,7 @@ function write_obstacles!(occ::Matrix{Float32}, qt::QuadTree, d::Int;
     length(buf) < maxbuf && resize!(buf, maxbuf)
     for (i, n) in enumerate(qt.schema.leaves)
         w = qt.weight_map[n]
-        w = w > threshold ? Float32(w) : 0.0f0
-        w == 0.0f0 && continue
+        w > threshold || continue
         k = leaf_lin_idxs!(buf, qt, n, d)
         for li in view(buf, 1:k)
             occ[li] = max(occ[li], w)

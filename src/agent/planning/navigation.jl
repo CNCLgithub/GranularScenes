@@ -69,9 +69,6 @@ end
 # Visualization
 ################################################################################
 
-using Colors: N0f8
-
-
 """
     qt_topdown(qt, d = finest_grid(qt); path = NodeId[], max_w = 1.0,
                threshold = 0.025)
@@ -91,7 +88,7 @@ function qt_topdown(qt,
     # Occupancy via the renderer's own fill routine (float buffer, d×d).
     occ = Matrix{Float32}(undef, d, d)
     write_obstacles!(occ, qt, d; threshold = Float32(threshold))
-
+    display_mat(occ)
     img = Matrix{RGB{Float64}}(undef, d, d)
     max_w = max_w > 0 ? max_w : 1.0
     # occ[li] is column-major with li=(x-1)*d + y: occ[x, y]. Julia displays

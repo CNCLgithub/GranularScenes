@@ -16,10 +16,8 @@ const DATA_DEPTH_MAX = 10.181246f0
 function load_data(path)
     dataset = DDPSDataset(path)
     x, o = dataset[1]
-    @show extrema(x)
     x .-= DATA_DEPTH_MIN
     x .*= 1.0f0 / DATA_DEPTH_MAX
-    @show extrema(x)
     (x, o)
 end
 
@@ -33,15 +31,13 @@ function main()
     @printf "Loading %s ...\n" DATA
     X, O = load_data(DATA)
     N = size(X, 4)
-    @printf "dataset: %s, N=%d\n" size(X) N
-    @printf "occupied fraction: %.4f (predict-prior MSE baseline: %.6f)\n" mean(O .> 0.5f0) mean((mean(O) .- O).^2)
 
     dds = DataDrivenState(
         ;
         device = dev,
         vae_path = VAE_CKPT,
         occ_path = OCC_CKPT,
-        var = 0.1
+        var = 0.001
     )
 
     @info "Loaded frozen VAE from " VAE_CKPT
@@ -51,7 +47,9 @@ function main()
     viz_O = O |> dev
 
     qt = qt_ddp(dds, viz_x)
-    display(qt)
+    # GranularScenes.display_mat(X[:, :, 1, 1])
+    display(qt_topdown(qt))
+    @show GranularScenes.nleaves(qt)
 end
 
 main()
