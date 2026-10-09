@@ -168,8 +168,7 @@ function DataDrivenState(;
                          occ_path::String,
                          var::Float64 = 0.05)
     svae = DepthVAE(rng) |> device
-    Flux.loadmodel!(svae, JLD2.load(vae_path, "ps") |> device;
-                    filter = k -> k in (:encoder, :mu, :scale))
+    Flux.loadmodel!(svae, JLD2.load(vae_path, "ps") |> device)
 
     occ = OccDecoder(rng) |> device
     Flux.loadmodel!(occ, JLD2.load(occ_path, "ps") |> device)
@@ -183,6 +182,7 @@ function occ_grid(ddp_params::DataDrivenState, img,
     μ, _ = GranularScenes.encode(ddp_params.vae, img)
     occ = GranularScenes.decode_occ(ddp_params.occ, μ)   # (16, 16, 1, 1)
     occ = dropdims(occ; dims = (3, 4))                   # (16, 16)
+    occ = Array(occ') 
     return NNlib.upsample_nearest(occ; size = (d, d))
 end
 
@@ -229,9 +229,9 @@ end
 function qt_ddp(ddp_params::DataDrivenState,
                 img,
                 min_depth::Int64 = 1,
-                max_depth::Int64 = 5)
+                max_depth::Int64 = 6)
     occ = Array(occ_grid(ddp_params, img, 32))
-    display_mat(occ)
+    display_mat(occ; rotate = false)
     qt_from_state(ddp_params.var, occ, max_depth)
 end
 
