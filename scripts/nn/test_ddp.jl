@@ -41,7 +41,7 @@ function main()
         device = dev,
         vae_path = VAE_CKPT,
         occ_path = OCC_CKPT,
-        var = 0.01
+        var = 0.1
     )
 
     @info "Loaded frozen VAE from " VAE_CKPT
@@ -51,6 +51,7 @@ function main()
     viz_O = O |> dev
 
     qt = qt_ddp(dds, viz_x)
+    display(qt)
 end
 
 main()
