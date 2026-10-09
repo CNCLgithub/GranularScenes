@@ -108,7 +108,8 @@ Base.length(ds::DDPSDataset) = attrs(ds.depth)["N"]
 function Base.getindex(ds::DDPSDataset, i::Integer)
     d = Float32.(ds.depth[:, :, :, i])   # (256, 256, 1)
     o = Float32.(ds.occ[:, :, :, i])     # (16, 16, 1)
-    return (reshape(d, DEPTH_SIZE..., 1), reshape(o, OCC_SIZE..., 1))
+    return (reshape(d, DEPTH_SIZE..., 1),
+            reshape(o, OCC_SIZE...  , 1))
 end
 
 # Batched access (used by DataLoader when it requests a vector of indices).

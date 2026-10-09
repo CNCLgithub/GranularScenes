@@ -99,15 +99,6 @@ function main()
     # --- save weights + final visualization --------------------------
     jldsave(joinpath(ckpt_dir, "$tag.weights.jld2"); ps=Flux.state(occ), opt_state=opt)
     @printf "saved %s\n" joinpath(ckpt_dir, "$tag.weights.jld2")
-
-    p_viz = decode_occ(occ, z_viz)
-    rows = map(1:length(viz_i)) do i
-        gt = cpu(viz_O[:, :, 1, i]); pr = cpu(p_viz[:, :, 1, i])
-        clamp.(hcat(gt, fill(1f0, size(gt, 1), 4), pr), 0f0, 1f0)
-    end
-    img = hcat(rows...)'
-    save(joinpath(ckpt_dir, "$tag.occ.png"), Gray.(clamp.(img, 0f0, 1f0)))
-    @printf "saved %s\n" joinpath(ckpt_dir, "$tag.occ.png")
 end
 
 main()

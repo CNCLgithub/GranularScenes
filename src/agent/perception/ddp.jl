@@ -36,7 +36,8 @@ using Flux,
     CUDA,
     FileIO,
     ImageCore,
-    Printf
+    Printf,
+    JLD2
 
 const LATENT = 32
 const HIDDEN = 16
@@ -68,7 +69,7 @@ function DepthVAE(rng::AbstractRNG=Random.default_rng())
         ConvTranspose((5, 5), FEAT => HIDDEN; stride=2, pad=SamePad()), swish,
         ConvTranspose((5, 5), HIDDEN => 8;    stride=2, pad=SamePad()), swish,
         ConvTranspose((5, 5), 8 => 1;         stride=2, pad=SamePad()),
-        sigmoid,
+        relu,
     )
     return DepthVAE(encoder, mu, scale, decoder)
 end
@@ -85,7 +86,8 @@ sample_noise(μ::AbstractArray{Float32}) =
 
 function sample(m::DepthVAE, x::AbstractArray{Float32,4})
     μ, σ = encode(m, x)
-    return μ .+ σ .* sample_noise(μ), μ, σ
+    z = μ .+ σ .* sample_noise(μ)
+    x̂ = decode_depth(m, z)
 end
 
 decode_depth(m::DepthVAE, z::AbstractMatrix{Float32}) = m.decoder(z)
@@ -143,6 +145,103 @@ function occ_loss(occ::OccDecoder, z::AbstractMatrix{Float32},
     mse = mean((p̂ .- O) .^ 2)
     acc = mean((p̂ .> 0.5f0) .== (O .> 0.5f0))
     return mse, acc
+end
+
+
+# ---------------------------------------------------------------------------
+# Proposal methods
+# ---------------------------------------------------------------------------
+
+
+struct DataDrivenState
+    vae::GranularScenes.DepthVAE
+    occ::GranularScenes.OccDecoder
+    var::Float64
+end
+
+function DataDrivenState(;
+                         device,
+                         rng = Xoshiro(0),
+                         vae_path::String,
+                         occ_path::String,
+                         var::Float64 = 0.05)
+    svae = DepthVAE(rng) |> device
+    Flux.loadmodel!(svae, JLD2.load(vae_path, "ps") |> device;
+                    filter = k -> k in (:encoder, :mu, :scale))
+
+    occ = OccDecoder(rng) |> device
+    Flux.loadmodel!(occ, JLD2.load(occ_path, "ps") |> device;
+                    filter = k -> k in (:head, :tail))
+
+    DataDrivenState(svae, occ, var)
+end
+
+"Occupancy probability grid at the quadtree render resolution (d x d)."
+function occ_grid(ddp_params::DataDrivenState, img,
+                  d::Int64)
+    # img: rendered depth image (H, W[, 1]) in [0, 1]
+    # x = Float32.(img)
+    # x = clamp!(x, zero(Float32), one(Float32))
+    # x = permutedims(x, (2, 1, 3))       # (W, H, 1): column-major grid ordering
+    # x = reshape(x, size(x, 1), size(x, 2), 1, 1)
+    μ, _ = GranularScenes.encode(ddp_params.vae, img)
+    occ = GranularScenes.decode_occ(ddp_params.occ, μ)   # (16, 16, 1, 1)
+    occ = dropdims(occ; dims = (3, 4))                   # (16, 16)
+    display_mat(Array(occ))
+    return NNlib.upsample_nearest(occ; size = (d, d))
+end
+
+"""
+    qt_from_state(var, state, max_level; min_depth, max_depth) -> QuadTree
+
+Build a QuadTree whose structure is decided by the data-driven occupancy grid:
+a node splits when the std of its footprint exceeds `var` (and depth < max),
+otherwise it becomes a leaf weighted by the grid mean over its footprint.
+Leaves are Morton-sorted as QuadTree's invariant requires.
+"""
+function qt_from_state(var::Float64, state::Matrix{<:Real},
+                       max_level::Int64;
+                       min_depth::Int64 = 1, max_depth::Int64 = max_level)
+    leaves = NodeId[]
+    weight_map = Dict{NodeId, Float64}()
+
+    # BFS walk over NodeId, root at depth 1
+    queue = NodeId[NodeId(UInt8(1), UInt32(0))]
+    while !isempty(queue)
+        n = popfirst!(queue)
+        x, y = node_xy(n)
+        sz = 1 << (max_level - n.depth)          # footprint in finest cells
+        idx = ((x*sz+1):(x*sz+sz), (y*sz+1):(y*sz+sz))
+        data = state[idx[1], idx[2]]
+        μ = mean(data)
+        sd = prod(size(data)) == 1 ? 0.0 : std(data; mean = μ)
+        @show sd
+        split = n.depth < min_depth || (sd > var && n.depth < max_depth)
+        if split
+            for i in 1:4
+                push!(queue, child_key(n, i))
+            end
+        else
+            push!(leaves, n)
+            weight_map[n] = μ
+        end
+    end
+
+    sort!(leaves)
+    schema = QTSchema(max_level, AABB2D(-0.5, -0.5, 0.5, 0.5), leaves)
+    return QuadTree(schema, weight_map)
+end
+
+function qt_ddp(ddp_params::DataDrivenState,
+                img,
+                min_depth::Int64 = 1,
+                max_depth::Int64 = 5)
+    display_mat(Array(img)[:, :, 1, 1])
+    occ = Array(occ_grid(ddp_params, img, 32))
+    println("DDP occupancy grid")
+    display_mat(occ)
+    # display(occ)
+    qt_from_state(ddp_params.var, occ, max_depth)
 end
 
 # ---------------------------------------------------------------------------

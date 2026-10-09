@@ -30,7 +30,7 @@ function load_data(path)
         X .-= X_min
         X .*= 1.0f0 / X_max
         @assert ndims(X) == 4 && size(X, 3) == 1
-        return X, O
+        return X, O, (X_min, X_max)
     end
 end
 
@@ -42,10 +42,11 @@ function main()
     use_gpu && @info "GPU: " * CUDA.name(CUDA.device())
 
     @printf "Loading %s ...\n" DATA
-    X, _O = load_data(DATA)
+    X, _, (X_min, X_max) = load_data(DATA)
     N = size(X, 4)
     @printf "dataset: %s, N=%d\n" size(X) N
     @printf "data variance: %.6f  (mean-predictor MSE baseline)\n" var(X)
+    @printf "data min: %.6f  | max: %.6f \n" X_min X_max
 
     m = DepthVAE(rng) |> dev
     opt = Optimisers.setup(Optimisers.AdamW(LR), m)
@@ -62,17 +63,16 @@ function main()
         perm = randperm(rng, N)
         for i in 1:BATCH:N-BATCH+1
             x = X[:, :, :, perm[i:i+BATCH-1]] |> dev
-            l, mse_l, kl_l = vae_loss(m, x; β=BETA)
-            gs = Zygote.gradient(m) do mm
-                first(vae_loss(mm, x; β=BETA))  # descend total loss only
-            end |> first                        # model grad as NamedTuple tree
-            opt, m = Optimisers.update(opt, m, gs)  # non-mutating: (state, new_model)
+            (l, mse_l, kl_l), gs = Zygote.withgradient(m) do mm
+                l, mse_l, kl_l = vae_loss(mm, x; β=BETA)
+            end 
+            opt, m = Optimisers.update(opt, m, gs[1])  # non-mutating: (state, new_model)
             tot += l; mse_tot += mse_l; kl_tot += kl_l; nb += 1
         end
         @printf "[flux vae] Epoch %2d, Loss: %.6f (mse %.6f, kl %.6f), Time: %.2fs\n" epoch tot/nb mse_tot/nb kl_tot/nb time()-t0
 
         # per-epoch visualization: same fixed samples each epoch, to see evolution
-        _, _, x̂e = sample(m, viz_x)
+        x̂e = sample(m, viz_x)
         rows = map(1:size(viz_x, 4)) do i
             gt = cpu(viz_x[:, :, 1, i]); rec = cpu(x̂e[:, :, 1, i])
             clamp.(hcat(gt, fill(1f0, size(gt, 1), 4), rec), 0f0, 1f0)
@@ -83,36 +83,9 @@ function main()
 
     # --- save weights + final reconstruction --------------------------
 
-    # save raw parameters + optimizer state; reload via Flux.loadmodel!(model, ps)
-    # (avoids JLD2's by-name function storage — no closures serialized)
-
-
-    using Flux: state
-
-    jldsave(joinpath(ckpt_dir, "$tag.weights.jld2"); ps=Flux.state(m), opt_state=opt)
+    jldsave(joinpath(ckpt_dir, "$tag.weights.jld2");
+            ps=Flux.state(m), opt_state=opt)
     @printf "saved %s\n" joinpath(ckpt_dir, "$tag.weights.jld2")
-
-    # side-by-side visualization: row i = (ground truth, reconstruction)
-    xs = viz_x
-    _, _, x̂s = sample(m, xs)
-    rows = map(1:size(xs, 4)) do i
-        gt  = cpu(xs[:, :, 1, i])
-        rec = cpu(x̂s[:, :, 1, i])
-        row = clamp.(hcat(gt, fill(1f0, size(gt, 1), 4), rec), 0f0, 1f0)  # gt | 4px gap | recon
-        row
-    end
-    n = length(rows)
-    img = hcat(rows...)   # each row-entry is 256x512 (gt|4px gap|rec); hcat them side by side
-    img = img'             # transpose to (W, H) orientation for saving
-    save(joinpath(ckpt_dir, "$tag.recon.png"), Gray.(clamp.(img, 0f0, 1f0)))
-    @printf "saved %s and %s\n" joinpath(ckpt_dir, "$tag.weights.jld2") joinpath(ckpt_dir, "$tag.recon.png")
-
-    # --- quick check: variance explained by the reconstructions ---
-    x = X[:, :, :, 1:min(256, N)] |> dev
-    μ, σ, x̂ = sample(m, x)
-    resid = mean((cpu(x̂) .- cpu(x)) .^ 2)   # both operands host-side
-    @printf "recon MSE on first %d samples: %.6f ; var(X) = %.6f ; variance explained = %.1f%%\n" min(256, N) resid var(X) 100f0*(1 - resid/var(X))
-
 end
 
 main()
