@@ -156,7 +156,7 @@ function apply_split_merge_move!(move::MergeMove,
             end
         end
     end
-    isempty(removed) ||
+    isempty(removed) &&
         throw(ArgumentError("No terminal descendants under $parent"))
 
     # delete terminal descendants, then add parent
@@ -236,29 +236,39 @@ end
 function apply_move(move::MergeMove,
                     qt::QuadTree)
     parent = move.node
-    kids = [child_key(parent, j) for j in 1:4]
-    all(k -> haskey(qt.weight_map, k), kids) ||
-        throw(ArgumentError("Parent missing child"))
-
-    pooled = 0.0
-    for k in kids
-        pooled += qt.weight_map[k]
+    maxd = max_level(qt.schema)
+    new_weight_map = deepcopy(qt.weight_map)
+    stack = [parent]
+    pooled = -Inf
+    logwsum = -Inf
+    removed = NodeId[]
+    log4 = log(4.0)
+    while !isempty(stack)
+        n = pop!(stack)
+        if haskey(new_weight_map, n)
+            d = Int64(depth(n))
+            pooled = logsumexp(new_weight_map[n] - d * log4, pooled)
+            logwsum = logsumexp(-d * log4, logwsum)
+            push!(removed, n)
+        elseif Int64(depth(n)) < maxd
+            for j = 1:4
+                push!(stack, child_key(n, j))
+            end
+        end
     end
-    pooled *= 0.25
+    isempty(removed) &&
+        throw(ArgumentError("No terminal descendants under $parent"))
 
-    new_weight_map = Dict{NodeId, Float64}()
-    # add parent
-    new_weight_map[parent] = pooled
-    #copy over other nodes
-    for (k, v) = qt.weight_map
-        in(k, kids) && continue
-        new_weight_map[k] = v
+    # delete terminal descendants, then add parent
+    for k in removed
+        delete!(new_weight_map, k)
     end
+    new_weight_map[parent] = pooled - logwsum
 
     new_leaves = collect(NodeId, keys(new_weight_map))
     sort!(new_leaves)
 
-    new_schema = QTSchema(max_level(qt),
+    new_schema = QTSchema(maxd,
                           bounds(qt),
                           new_leaves)
 

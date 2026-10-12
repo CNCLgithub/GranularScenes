@@ -95,6 +95,7 @@ end
 "Finest cells per axis."
 @inline finest_grid(schema::QTSchema) = 1 << (max_level(schema) - 1)
 @inline finest_grid(qt::QuadTree) = 1 << (max_level(qt) - 1)
+@inline finest_grid(r::GridRoom) = first(steps(r))
 
 "Edge length of leaf `i` in finest cells."
 @inline leaf_cells_per_side(qt::QuadTree, n::NodeId) =

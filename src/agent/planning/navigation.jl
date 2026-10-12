@@ -84,11 +84,12 @@ convention as `leaf_lin_idxs!`: li = (c1−1)*d + c2, x = column, y = row).
 function qt_topdown(qt,
                     path::Vector{NodeId} = NodeId[],
                     d = finest_grid(qt);
-                    max_w::Float64 = 1.0, threshold::Float64 = 0.025)
+                    max_w::Float64 = 1.0, threshold::Float64 = 0.025,
+                    north::Bool = true)
     # Occupancy via the renderer's own fill routine (float buffer, d×d).
     occ = Matrix{Float32}(undef, d, d)
     write_obstacles!(occ, qt, d; threshold = Float32(threshold))
-    display_mat(Array(occ'); rotate=false)
+    # display_mat(Array(occ'); rotate=false)
     img = Matrix{RGB{Float64}}(undef, d, d)
     max_w = max_w > 0 ? max_w : 1.0
     # occ[li] is column-major with li=(x-1)*d + y: occ[x, y]. Julia displays
@@ -101,7 +102,7 @@ function qt_topdown(qt,
             RGB(1.0 - 0.85v, 1.0 - 0.85v, 1.0 - 0.85v) :
             RGB(1.0, 1.0, 1.0)
     end
-    isempty(path) && return img
+    isempty(path) && !north && return img
 
     tint = 0.45
     buf = Int64[]
@@ -123,6 +124,14 @@ function qt_topdown(qt,
                               (1-tint)*b + tint*blue(c))
         end
     end
+
+    if north
+        w = max(3, cld(d, 16))
+        for r in 1:w, c in ((d - w) ÷ 2 + 1):((d + w) ÷ 2)
+            img[r, c] = RGB(0.0, 0.0, 1.0)
+        end
+    end
+
     img
 end
 

@@ -170,11 +170,13 @@ function run_model()
     cm = choicemap(:depth => depth)
 
     depth_for_ddp = reshape(depth, 256, 256, 1, 1)
+    depth_for_ddp .-= DATA_DEPTH_MIN
+    depth_for_ddp .*= 1f0 / DATA_DEPTH_MAX
     @show size(depth_for_ddp)
-    qt = GS.qt_ddp(dds, depth_for_ddp)
+    qt_vae = GS.qt_ddp(dds, depth_for_ddp)
     @show typeof(cm)
-    @show typeof(qt)
-    GS.cm_from_qt!(cm, qt)
+    @show typeof(qt_vae)
+    GS.cm_from_qt!(cm, qt_vae)
 
     
     vision_prior = QTVisionPrior()
@@ -184,7 +186,7 @@ function run_model()
     vision_prot = AdaptiveMH(
         ;
                             model = qt_vision,
-                            model_args = (qt.schema, vision_prior, vision_obsm),
+                            model_args = (qt_vae.schema, vision_prior, vision_obsm),
                             obs = cm,
                              chain_length = 1000,
                             )
@@ -213,7 +215,7 @@ function run_model()
     attention_module = AttentionModule(ac)
 
     mo = MO(;window=10)
-    granularity_module = GranularityModule(mo, qt.schema)
+    granularity_module = GranularityModule(mo, qt_vae.schema)
 
     println("Pre-attentive Perception")
     @time for _ = 1:10
@@ -240,28 +242,31 @@ function run_model()
     map_trace, _... = Gen.regenerate(map_trace, select(:depth))
     map_depth = depth_map_array(map_trace[:depth])
 
-    gt_topdown = room_topdown(r)
-    (gt_topdown, gt_depth, map_depth, path_viz, att_viz)
+    gt_room = r
+    (; gt_room, gt_depth, qt_vae, map_depth, path_viz, att_viz)
 end
 
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
-gt_topdown, gt_depth, map_depth, best_path, att_vis = run_model();
+run = run_model();
 
 # ╔═╡ 290f6e10-8b16-4646-86bf-9d79d9831919
-gt_depth
+run.gt_depth
 
 # ╔═╡ 7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
-map_depth
+run.map_depth
 
 # ╔═╡ 2991cb98-187b-4b21-a47e-e32e04346353
-att_vis
+run.att_viz
 
 # ╔═╡ db88ff55-b7f0-4ea4-b63f-d36178efd42f
-best_path
+run.path_viz
+
+# ╔═╡ 07b90484-8f48-4c17-a4ce-271d618c5d25
+qt_topdown(run.qt_vae)
 
 # ╔═╡ 4e263aee-7db2-45ce-b8be-375d4806318f
-gt_topdown
+qt_topdown(run.gt_room)
 
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
@@ -270,6 +275,7 @@ gt_topdown
 # ╠═7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
 # ╠═2991cb98-187b-4b21-a47e-e32e04346353
 # ╠═db88ff55-b7f0-4ea4-b63f-d36178efd42f
+# ╠═07b90484-8f48-4c17-a4ce-271d618c5d25
 # ╠═4e263aee-7db2-45ce-b8be-375d4806318f
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
