@@ -4,27 +4,38 @@
 using Markdown
 using InteractiveUtils
 
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    #! format: off
+    return quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+    #! format: on
+end
+
 # ╔═╡ d1a2b3c4-0001-4000-8000-000000000001
 begin
 	using Pkg
 	Pkg.activate("..")
 end
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000002
+# ╔═╡ d1a2b3c4-0002-4000-8000-000000000002
 begin
+	using HDF5, Flux, Optimisers, Random, Statistics, Printf, cuDNN, FileIO, ImageCore, JLD2
+	using Flux: state
+	import CUDA
 
-	using Lux, Reactant, Enzyme, Optimisers, MLUtils, Random, Printf, Statistics
 	using PlutoUI
-	using MLUtils
-	# using Plots
-	import HDF5
-	using Revise
+	using Gen: get_retval
+	using Rooms
 	using GranularScenes
-	import GranularScenes: DepthOccVAE, vae_loss_function, occ_loss_function,
-		load_depth_dataset, DepthOccDataset, plot_vae_panels
+	import GranularScenes as GS
 end
 
-# ╔═╡ 665b3437-0ce9-4818-ad14-32c4a433ee4e
+# ╔═╡ d1a2b3c4-0003-4000-8000-000000000003
 html"""
 <style>
     @media screen {
@@ -57,360 +68,190 @@ cm-editor .cm-scroller,
 </style>
 """
 
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000003
+# ╔═╡ d1a2b3c4-0004-4000-8000-000000000004
 md"""
-# Depth-Map VAE + Occupancy Decoder (two-stage)
+# DDP + AdaptiveMH agent
 
-Stage 1 trains the VAE (encoder + depth decoder) on 256×256 depth maps.
-Stage 2 freezes the VAE and trains the occupancy decoder (32×32 latent → 16×16
-occupancy grid). Each epoch displays the test-grid visualization for the first
-3 scenes.
+- **Part 1** — the Flux depth-VAE + occupancy decoder (ported from `scripts/nn/test_ddp.jl`).
+- **Part 2** — an agent initialized with the DDP via the `AdaptiveMH` constructor (`ddp` kwarg).
+- **Part 3** — chain dynamics visualization.
 """
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000004
-md"## Hyperparameters"
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000005
-hyper = (
-	batchsize = 128,
-	seed = 0,
-	vae_epochs = 10,
-	occ_epochs = 20,
-	weight_decay = 1.0f-5,
-	learning_rate = 1.0f-3,
-	occ_learning_rate = 1.0f-3,
-	β = 0.001f0,
-	max_num_filters = 64,
-	image_shape = (256, 256, 1),
-	latent_dim = 32,
-);
-
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000006
-rng = Xoshiro(); Random.seed!(rng, hyper.seed);
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000029
-# ╠═╡ disabled = true
-#=╠═╡
+# ╔═╡ d1a2b3c4-0005-4000-8000-000000000005
+# ----------------------------------------------------------------- config ---
 begin
-	# TensorBoard logs land in ../tblogs/<run-name>; view with
-	#   tensorboard --logdir ../tblogs
-	logger = TBLogger(joinpath(@__DIR__, "..", "tblogs", Printf.format(
-		Printf.Format("run_%Y%m%d_%H%M%S"), now())); min_level=Logging.Info)
-end
-  ╠═╡ =#
+	DATA     = get(ENV, "DDP_DATA",     "/spaths/datasets/ddp_train_11f_32x32.hdf5")
+	VAE_CKPT = get(ENV, "DDP_VAE_CKPT", "/spaths/checkpoints/fluxvae_e30.weights.jld2")
+	OCC_CKPT = get(ENV, "DDP_OCC_CKPT", "/spaths/checkpoints/fluxocc_e30.weights.jld2")  # NB: test_ddp.jl had a DDP_VAE_CKPT typo here
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000007
-md"## Model"
+	const DATA_DEPTH_MIN = 3.971077f0
+	const DATA_DEPTH_MAX = 10.181246f0
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000008
-model = DepthOccVAE(rng; 
-					image_shape=hyper.image_shape, max_num_filters=hyper.max_num_filters,
-					latent_dim=hyper.latent_dim,  grid_hw=(32, 32))
+	# DDP -> quadtree parameters
+	QT_VAR       = 0.01      # split threshold on node footprint std
+	QT_MAX_LEVEL = 3         # 8x8 max leaves
+	QT_MAX_DEPTH = 4
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000009
-begin
-	xdev = reactant_device(; force=true)
-	cdev = cpu_device()
+	# inference chain
+	N_CHAIN_STEPS = 60
+	VIZ_EVERY     = 5
+	MARGIN_SIZE   = 50
 end
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000010
-ps, st = Lux.setup(rng, model) |> xdev
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000011
-Printf.@printf "Total Trainable Parameters: %0.4f M\n" (Lux.parameterlength(ps) / 1.0e6)
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000012
-md"## Data"
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000013
-# train_dataloader = load_depth_dataset(; batchsize=hyper.batchsize) |> xdev
-dataset = DDPSDataset("/spaths/datasets/ddp_train_11f_32x32.hdf5")
-
-# ╔═╡ db784acc-7b6f-49df-9509-69678af96c9e
+# ╔═╡ d1a2b3c4-0007-4000-8000-000000000007
 begin
-	X_all = Float32.(HDF5.read(dataset.depth, Float32, :, :, :, :))   # single hyperslab read of the whole array
-	x_min, x_max = extrema(X_all)
-	X_all .-= x_min
-	X_all .*= 1.0f0 / x_max
-	O_all = Float32.(HDF5.read(dataset.occ, UInt8, :, :, :, :))
-end;
+	@printf "Loading %s ...\n" DATA
+	X, O = load_data(DATA)
+	N = size(X, 4)
+	@printf "dataset: %s, N=%d\n" size(X) N
+	@printf "occupied fraction: %.4f (predict-prior MSE baseline: %.6f)\n" mean(O .> 0.5f0) mean((mean(O) .- O).^2)
+end
 
-# ╔═╡ 24af709c-a124-4671-86d0-41cbb4c82a67
-#train_dataloader = DataLoader(dataset, batchsize=hyper.batchsize; shuffle=true, partial=false);
-train_dataloader = DataLoader((X_all, O_all), batchsize=hyper.batchsize; shuffle=true, partial=false)
+# ╔═╡ d1a2b3c4-0008-4000-8000-000000000008
+begin
+	use_gpu = CUDA.functional()
+	dev = use_gpu ? (x -> fmap(CUDA.cu, x)) : Flux.cpu
+	use_gpu && @info "GPU: " * CUDA.name(CUDA.device())
 
-# ╔═╡ be3838c5-9f30-4fce-9472-b527199c9838
-function vae_loss_with_β(model, ps, st, X)
-    return vae_loss_function(model, ps, st, X; β=hyper.β)
+	# NOTE: qualified — after the inference include (cell below), unqualified
+	# DataDrivenState/occ_grid resolve to the src/inference variants.
+	dds = GranularScenes.DataDrivenState(
+		;
+		device = dev,
+		vae_path = VAE_CKPT,
+		occ_path = OCC_CKPT,
+		var = 0.01
+	)
+
+	@info "Loaded frozen VAE from " VAE_CKPT
+	@info "Loaded frozen OCC from " OCC_CKPT
 end
 
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000014
-md"## Test set (first 3 scenes)"
+# ╔═╡ d1a2b3c4-0011-4000-8000-000000000011
+md"""
+# Part 2 — agent initialized with the DDP
+"""
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000015
+# ╔═╡ d1a2b3c4-0013-4000-8000-000000000013
+# --------------------------------------------------- scene & model ----------
 begin
-	test_X = X_all[:, :, :, 1:3]
-	test_O = Float32.(rand(Float32, 16, 16, 1, 3) .> 0.5)
-end;
+    dataset = "window-0.1/2025-02-05_vifdDO"
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000030
-begin
-	# Encode the test scenes with the current encoder and return the latent
-	# grids (32, 32, 1, 3) for μ and logσ², on the CPU for logging/plotting.
-	function test_latents(parameters, states)
-		st_enc = Lux.testmode(states.encoder)
-		(μ, σ, _), _ = model.encoder(test_X, parameters.encoder, st_enc)
-		return cdev(μ), cdev(σ)   # (latent_dim, 3) each; flat latent, not a grid
-	end
+    function load_room(idx::Int)
 
-	"helper: test_latents"
+        base_path = "/spaths/datasets/$(dataset)/scenes"
+        path = joinpath(base_path, "$(idx).json")
+        local base_s
+        open(path, "r") do f
+            base_s = JSON.parse(f)
+        end
+        from_json(GridRoom, base_s)
+    end
 end
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000016
-md"## Visualization"
-
-# ╔═╡ 2cf4adf7-e368-4ee0-82ee-8a20b373bd59
-@show model.depth_decoder.layers.z_head
-
-# ╔═╡ 1b3e1292-00f3-4370-995a-7430b6ef94d9
+# ╔═╡ d1a2b3c4-0014-4000-8000-000000000014
+# --------------------------------------------------- DDP proposal -----------
+# Top-level (src/inference/procedures/ddp/ddp.jl) DataDrivenState: same Flux
+# checkpoints as Part 1, without the device kwarg.
 begin
-	ps_d, st_d = Lux.setup(Xoshiro(0), model.depth_decoder)
-	z0 = randn(Float32, 32, 2)
-	@show size(first(model.depth_decoder(z0, ps_d, st_d)))   # expect (256, 256, 1, 2)
-	
+	ddp = DataDrivenState(;
+						  vae_path = VAE_CKPT,
+						  occ_path = OCC_CKPT,
+						  var = QT_VAR)
+
+	ddp_cm = generate_cm_from_ddp(ddp, img, QT_MAX_LEVEL;
+								  max_depth = QT_MAX_DEPTH)
+	display_mat(project_qt(ddp_cm))
 end
 
-# ╔═╡ f19865e5-06a5-474c-a763-f469f7b31e9d
-pathof(GranularScenes)
-
-# ╔═╡ 73eb2edb-9f01-47e8-9bce-6a004af63507
-Base.methods(DepthOccVAE)
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000018
-md"## Stage 1: VAE training"
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000019
+# ╔═╡ d1a2b3c4-0015-4000-8000-000000000015
+# --------------------------------------------------- query & procedure ------
 begin
-	opt = AdamW(; eta=hyper.learning_rate, lambda=hyper.weight_decay)
-	train_state = Training.TrainState(model, ps, st, opt)
-	train_state_ref = Ref{Lux.Training.TrainState}(train_state)
-end;
+	q0 = query_from_params(room, gm_params)
 
-# ╔═╡ 9d2ce5dc-e423-41c6-9353-e1a3c176622a
-viz_forward = @compile donated_args=:none model(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states));
+	proc = AdaptiveMH(;
+					  rw_budget = 20,
+					  sm_budget = 20,
+					  ddp = (_...) -> deepcopy(ddp_cm),
+					  protocol = AdaptiveComputation())
 
-# ╔═╡ 70cd92f5-42dd-421b-b8f1-6a85978c4343
-begin
-	using Reactant: @code_hlo
-	hlo = @code_hlo model(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
-	io = IOBuffer(); show(io, hlo); String(take!(io))   # search for the reshape / broadcast dims
-	hlo_str = sprint(show, hlo)
-	@show occursin("16384", hlo_str)              # true ⇒ trace has the Dense head
-	@show occursin("32x32x16", hlo_str)           # reshape to grid (old: 16x16)
+	# NOTE: the top-level train! (src/planning.jl) is used below; GS.train! does
+	# not exist — run.jl's GS.train!/GranularScenes.viz_chain calls are stale.
+	n_total = N_CHAIN_STEPS + 2 * MARGIN_SIZE
+
+	c0 = initialize_chain(proc, q0, n_total)
+	l0 = MemLogger(MARGIN_SIZE)
 end
 
-# ╔═╡ a595671f-fc46-49ec-9d1a-d8e4885cefdb
+# ╔═╡ d1a2b3c4-0016-4000-8000-000000000016
 begin
-out, _ = viz_forward(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
-@show size(Array(first(out)))   # 256? or 128?
-	
+	train!(c0, l0, N_CHAIN_STEPS)
+	viz_chain(l0)
 end
 
-# ╔═╡ 78ecd4af-2b07-465e-8ac7-e14d28e35781
-begin
-	probe_compile = @compile donated_args=:none model(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
-	(p_xrec, p_occ, p_μ, p_logσ²) = first(probe_compile(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states)))
-	@show size(p_xrec)
-end
+# ╔═╡ d1a2b3c4-0017-4000-8000-000000000017
+md"""
+# Part 3 — chain dynamics
+"""
 
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000017
-begin
-	@printf "=== Initial state (before training) ===\n"
-    (x_rec, occ, μ, logσ²), _ = viz_forward(xdev(test_X), train_state.parameters, Lux.testmode(train_state.states))
-    panels = plot_vae_panels(test_X, test_O, Array(x_rec), Array(occ))
-end
-
-# ╔═╡ 9083bf54-cc23-4b18-91d4-2ce4d2444bf6
-typeof(train_state)
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000020
-begin
-	for epoch in 1:hyper.vae_epochs
-		loss_total = xdev(0.0f0)
-		recon_total = xdev(0.0f0)
-		kl_total = xdev(0.0f0)
-		total_samples = 0
-		start_time = time()
-
-		for (i, (X, _)) in enumerate(train_dataloader)
-			X_dev = xdev(X)
-			(_, loss, aux, _train_state) = Training.single_train_step!(
-				AutoEnzyme(),
-				vae_loss_with_β,
-				X_dev,
-				train_state_ref[];
-				return_gradients=Val(false),
-				compile_options=Reactant.CompileOptions(donated_args=:none),
-			)
-			train_state_ref[] = _train_state
-			  loss_total    += loss
-    	    recon_total   += aux.depth_loss
-    	    kl_total      += aux.kldiv_loss
-		    total_samples += size(X, ndims(X))
-		end
-
-		@printf "[stage 1] Epoch %d, Train Loss: %.7f, Time: %.4fs\n" epoch (Float32(loss_total) / length(train_dataloader)) (time() - start_time)
-		# with_logger(logger) do
-		# 	log_value(0, "train/vae_loss", loss_total / length(train_dataloader))
-		# 	# Latent state per test scene: 32x32 heatmap of μ and logσ².
-		# 	(μ, logσ²) = test_latents(train_state.parameters, train_state.states)
-		# 	for k in axes(μ, 4)
-		# 		log_image(0, "z/mean/scene$(k)", μ[:, :, 1, k])   # 32x32 heatmap
-		# 		log_image(0, "z/logvar/scene$(k)", logσ²[:, :, 1, k])
-		# 	end
-		# end
-	end
-end
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000021
-md"### Visualization after stage 1"
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000022
-begin
-    (_x_rec, _occ, _μ, _logσ²), _ = viz_forward(xdev(test_X), train_state_ref[].parameters, Lux.testmode(train_state_ref[].states))
-    panels_s1 = plot_vae_panels(test_X, test_O, Array(_x_rec), Array(_occ))
-	panels_s1
-end
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000023
-md"## Stage 2: Occupancy decoder training (frozen VAE)"
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000024
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-	occ_model = model.occ_decoder
-	occ_ps = train_state.parameters.occ_decoder
-	occ_st = train_state.states.occ_decoder
-	occ_opt = AdamW(; eta=hyper.occ_learning_rate, lambda=hyper.weight_decay)
-	occ_train_state = Training.TrainState(occ_model, occ_ps, occ_st, occ_opt)
-end
-  ╠═╡ =#
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000025
-begin
-	# Cache z for all training samples with the frozen encoder (test mode).
-	zs = nothing
-	st_enc = Lux.testmode(train_state.states.encoder)
-	for (i, (X, _)) in enumerate(train_dataloader)
-		(z, _, _), _ = model.encoder(X, train_state.parameters.encoder, st_enc)
-		zs = zs === nothing ? cdev(z) : cat(zs, cdev(z); dims=4)
-	end
-	z_cache = xdev(zs)
-	# Note: with shuffle=true the batch indices are not aligned with the cache.
-	# For exact index alignment use shuffle=false in a stage-2 loader.
-end
-
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000026
-#=╠═╡
-begin
-	for epoch in 1:hyper.occ_epochs
-		loss_total = 0.0f0
-		total_samples = 0
-		start_time = time()
-
-		for (i, (X, O)) in enumerate(train_dataloader)
-			idxs = ((i-1)*hyper.batchsize+1):min(i*hyper.batchsize, size(z_cache, 4))
-			z = z_cache[:, :, :, idxs]
-			(_, loss, _, occ_train_state) = Training.single_train_step!(
-				AutoEnzyme(),
-				occ_loss_function,
-				(z, O),
-				occ_train_state;
-				return_gradients=Val(false),
-			)
-			loss_total += loss
-			total_samples += size(O, ndims(O))
-		end
-
-		@printf "[stage 2] Epoch %d, Train Loss: %.7f, Time: %.4fs\n" epoch (loss_total / length(train_dataloader)) (time() - start_time)
-
-		# Show the test-grid visualization every epoch (once per epoch, not per
-		# batch). Rows are scenes; columns are | GT depth | Recon Depth | GT occ
-		# | Recon Occ |.
-		(panels, (x_rec, occ, μ, logσ²)) = viz_test_grid(model, train_state.parameters,
-			Lux.testmode(train_state.states), test_X, test_O;
-			filepath=joinpath(@__DIR__, "..", "viz", "ddp_epoch$(lpad(epoch, 3, '0')).png"))
-		display(panels)
-
-		with_logger(logger) do
-			log_value(0, "train/occ_loss", loss_total / length(train_dataloader))
-			# Log per-scene reconstructions for cross-epoch comparison.
-			x_rec_cpu, occ_cpu = cdev(x_rec), cdev(occ)
-			for k in axes(occ, 4)
-				log_image(0, "recon/depth/scene$(k)", x_rec_cpu[:, :, 1, k])
-				log_image(0, "recon/occ/scene$(k)", occ_cpu[:, :, 1, k])
-			end
+# ╔═╡ 2a3ac72c-a2cb-4ef4-8870-093996cb3b2a
+# Runs the chain one step at a time, recording the log score, the number of
+# quadtree leaves, and a rendered frame of the current quadtree geometry.
+function chain_dynamics(c::AMHChain, l, steps::Int; viz_every::Int = 5)
+	frames = Any[]
+	scores = Float64[]
+	nleaf  = Int[]
+	for i = 1:steps
+		train!(c, l, 1)
+		push!(scores, Gen.get_score(c.state))
+		qt = get_retval(c.state)
+		push!(nleaf, length(qt.leaves))
+		if i % viz_every == 0
+			push!(frames, draw_mat(project_qt(qt), true, colorant"black", colorant"blue"))
 		end
 	end
+	frames, scores, nleaf
 end
-  ╠═╡ =#
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000027
-md"### Final visualization"
+# ╔═╡ de289c12-7f9a-4018-800d-5e6486b12416
+frames, scores, nleaf = chain_dynamics(c0, l0, N_CHAIN_STEPS; viz_every = VIZ_EVERY)
 
-# ╔═╡ d1a2b3c4-0001-4000-8000-000000000028
-begin
-	(panels_final, _) = viz_test_grid(model, train_state.parameters,
-		Lux.testmode(train_state.states), test_X, test_O)
-	panels_final
+# ╔═╡ d1a2b3c4-0019-4000-8000-000000000019
+@bind frame_i Slider(1:length(frames); default = length(frames), show_value = true)
+
+# ╔═╡ d1a2b3c4-0020-4000-8000-000000000020
+# browse the recorded quadtree states with the slider above
+Table(frames[max(1, frame_i):end])
+
+# ╔═╡ d1a2b3c4-0021-4000-8000-000000000021
+# score trajectory: higher (closer to 0) = better posterior fit
+let s = scores
+	mn, mx = extrema(s)
+	rng01 = max(mx - mn, eps())
+	blocks = "▁▂▃▄▅▆▇█"
+	spark = join(blocks[clamp(round(Int, (v - mn) / rng01 * 7) + 1, 1, 8)] for v in s)
+	md"score over $(length(s)) steps: min $(Printf.@sprintf "%.3f" mn), max $(Printf.@sprintf "%.3f" mx): `$spark`"
 end
 
 # ╔═╡ Cell order:
-# ╟─665b3437-0ce9-4818-ad14-32c4a433ee4e
 # ╠═d1a2b3c4-0001-4000-8000-000000000001
-# ╠═d1a2b3c4-0001-4000-8000-000000000002
-# ╟─d1a2b3c4-0001-4000-8000-000000000003
-# ╟─d1a2b3c4-0001-4000-8000-000000000004
-# ╠═d1a2b3c4-0001-4000-8000-000000000005
-# ╠═d1a2b3c4-0001-4000-8000-000000000006
-# ╠═d1a2b3c4-0001-4000-8000-000000000029
-# ╟─d1a2b3c4-0001-4000-8000-000000000007
-# ╠═d1a2b3c4-0001-4000-8000-000000000008
-# ╠═d1a2b3c4-0001-4000-8000-000000000009
-# ╠═d1a2b3c4-0001-4000-8000-000000000010
-# ╠═d1a2b3c4-0001-4000-8000-000000000011
-# ╟─d1a2b3c4-0001-4000-8000-000000000012
-# ╠═d1a2b3c4-0001-4000-8000-000000000013
-# ╠═db784acc-7b6f-49df-9509-69678af96c9e
-# ╠═24af709c-a124-4671-86d0-41cbb4c82a67
-# ╠═be3838c5-9f30-4fce-9472-b527199c9838
-# ╟─d1a2b3c4-0001-4000-8000-000000000014
-# ╠═d1a2b3c4-0001-4000-8000-000000000015
-# ╠═d1a2b3c4-0001-4000-8000-000000000030
-# ╟─d1a2b3c4-0001-4000-8000-000000000016
-# ╠═9d2ce5dc-e423-41c6-9353-e1a3c176622a
-# ╠═70cd92f5-42dd-421b-b8f1-6a85978c4343
-# ╠═a595671f-fc46-49ec-9d1a-d8e4885cefdb
-# ╠═2cf4adf7-e368-4ee0-82ee-8a20b373bd59
-# ╠═1b3e1292-00f3-4370-995a-7430b6ef94d9
-# ╠═78ecd4af-2b07-465e-8ac7-e14d28e35781
-# ╠═f19865e5-06a5-474c-a763-f469f7b31e9d
-# ╠═73eb2edb-9f01-47e8-9bce-6a004af63507
-# ╠═d1a2b3c4-0001-4000-8000-000000000017
-# ╟─d1a2b3c4-0001-4000-8000-000000000018
-# ╠═d1a2b3c4-0001-4000-8000-000000000019
-# ╠═9083bf54-cc23-4b18-91d4-2ce4d2444bf6
-# ╠═d1a2b3c4-0001-4000-8000-000000000020
-# ╟─d1a2b3c4-0001-4000-8000-000000000021
-# ╠═d1a2b3c4-0001-4000-8000-000000000022
-# ╟─d1a2b3c4-0001-4000-8000-000000000023
-# ╠═d1a2b3c4-0001-4000-8000-000000000024
-# ╠═d1a2b3c4-0001-4000-8000-000000000025
-# ╠═d1a2b3c4-0001-4000-8000-000000000026
-# ╠═d1a2b3c4-0001-4000-8000-000000000027
-# ╠═d1a2b3c4-0001-4000-8000-000000000028
+# ╠═d1a2b3c4-0002-4000-8000-000000000002
+# ╟─d1a2b3c4-0003-4000-8000-000000000003
+# ╟─d1a2b3c4-0004-4000-8000-000000000004
+# ╠═d1a2b3c4-0005-4000-8000-000000000005
+# ╠═d1a2b3c4-0006-4000-8000-000000000006
+# ╠═d1a2b3c4-0007-4000-8000-000000000007
+# ╠═d1a2b3c4-0008-4000-8000-000000000008
+# ╠═d1a2b3c4-0009-4000-8000-000000000009
+# ╟─d1a2b3c4-0011-4000-8000-000000000011
+# ╠═d1a2b3c4-0013-4000-8000-000000000013
+# ╠═d1a2b3c4-0014-4000-8000-000000000014
+# ╠═d1a2b3c4-0015-4000-8000-000000000015
+# ╠═d1a2b3c4-0016-4000-8000-000000000016
+# ╠═d1a2b3c4-0017-4000-8000-000000000017
+# ╠═2a3ac72c-a2cb-4ef4-8870-093996cb3b2a
+# ╠═de289c12-7f9a-4018-800d-5e6486b12416
+# ╠═d1a2b3c4-0019-4000-8000-000000000019
+# ╠═d1a2b3c4-0020-4000-8000-000000000020
+# ╠═d1a2b3c4-0021-4000-8000-000000000021

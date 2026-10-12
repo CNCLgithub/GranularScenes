@@ -235,6 +235,15 @@ function qt_ddp(ddp_params::DataDrivenState,
     qt_from_state(ddp_params.var, occ, max_depth)
 end
 
+function cm_from_qt!(cm::ChoiceMap, qt::QuadTree)
+    for (i, l) = enumerate(leaves(qt))
+        w = weight_of(qt, l)
+        cm[:qt => :weights => i => :mean] = w
+        cm[:qt => :weights => i => :w] = w
+    end
+    return cm
+end
+
 # ---------------------------------------------------------------------------
 # Visualization: gray-scale helpers for panels / PNG strips
 # ---------------------------------------------------------------------------

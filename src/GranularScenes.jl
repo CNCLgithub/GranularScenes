@@ -19,6 +19,7 @@ using FunctionalCollections
 
 
 # qualified
+using Gen: logsumexp
 using LinearAlgebra: norm
 using Statistics: mean, std
 # using Base.Iterators: product
