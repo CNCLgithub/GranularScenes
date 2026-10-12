@@ -130,28 +130,46 @@ function apply_split_merge_move!(move::MergeMove,
     parent = move.node
     mo_prot, mo_state = mparse(mo)
     ti = mo_state.time_integral
+    maxd = max_level(mo_state.schema)
 
-    kids = [child_key(parent, j) for j in 1:4]
-    all(k -> haskey(ti, k), kids) ||
-        throw(ArgumentError("Parent missing child"))
-
+    # Stack-based traversal of the subtree rooted at `parent`. Terminal
+    # nodes (keys of `ti`) are pooled with weight equal to their cell
+    # area, 4^{-depth}; interior nodes are expanded into their four
+    # children. The pooled weights telescope to the area of `parent`,
+    # so `pooled - logwsum` is the area-weighted linear average of the
+    # subtree's occupancy in log space.
+    stack = [parent]
     pooled = -Inf
-    for j = 1:4
-        k = child_key(parent, j)
-        haskey(ti, k) || throw(ArgumentError("Parent $(parent) missing child $(k)"))
-        pooled = logsumexp(ti[k], pooled)
+    logwsum = -Inf
+    removed = NodeId[]
+    log4 = log(4.0)
+    while !isempty(stack)
+        n = pop!(stack)
+        if haskey(ti, n)
+            d = Int64(depth(n))
+            pooled = logsumexp(ti[n] - d * log4, pooled)
+            logwsum = logsumexp(-d * log4, logwsum)
+            push!(removed, n)
+        elseif Int64(depth(n)) < maxd
+            for j = 1:4
+                push!(stack, child_key(n, j))
+            end
+        end
+    end
+    isempty(removed) ||
+        throw(ArgumentError("No terminal descendants under $parent"))
+
+    # delete terminal descendants, then add parent
+    for k in removed
         delete!(ti, k)
     end
-    pooled += log(0.25)
-
-    # add parent
-    ti[parent] = pooled
+    ti[parent] = pooled - logwsum
 
     new_leaves = collect(NodeId, keys(ti))
     sort!(new_leaves)
 
     ps = mo_state.schema
-    mo_state.schema = QTSchema(max_level(ps),
+    mo_state.schema = QTSchema(maxd,
                                bounds(ps),
                                new_leaves)
     return nothing
