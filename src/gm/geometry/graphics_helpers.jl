@@ -11,17 +11,23 @@ by leaf `n` on a `d × d` render grid, in node_to_idx's y-descending, x-ascendin
 order. Returns the count.
 """
 function leaf_lin_idxs!(buf::Vector{Int64}, qt::QuadTree, n::NodeId, d::Int)
+    # The quad tree's finest frame (L x L) and the render grid (d x d) need
+    # not agree (e.g. a DDP-built qt with max_level 6 rendered at d = 16).
+    # Map the leaf's finest-cell span [x0, x0+sz) x [y0, y0+sz) onto the
+    # render grid by range division; `write_obstacles!` takes the max over
+    # the (possibly overlapping) contributions. Works for L > d, L == d and
+    # L < d. Output order is ascending in (c1, c2).
     L = finest_grid(qt)
-    f = d ÷ L
     x, y = node_xy(n)                 # node-level coords at n.depth
     sz = leaf_cells_per_side(qt, n)
     x0 = x * sz                       # convert to finest-cell coords
     y0 = y * sz
-    w  = sz * f                       # leaf side in render cells
+    c1lo = (x0 * d) ÷ L + 1           # inclusive render column range
+    c1hi = ((x0 + sz) * d - 1) ÷ L + 1
+    c2lo = (y0 * d) ÷ L + 1           # inclusive render row range
+    c2hi = ((y0 + sz) * d - 1) ÷ L + 1
     k  = 0
-    for j in 0:(w-1), i in 0:(w-1)
-        c1 = x0 * f + i + 1           # render column (x)
-        c2 = y0 * f + j + 1           # render row (y)
+    for c1 in c1lo:c1hi, c2 in c2lo:c2hi
         buf[k += 1] = (c1 - 1) * d + c2
     end
     return k

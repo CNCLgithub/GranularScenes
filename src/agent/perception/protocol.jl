@@ -29,7 +29,7 @@ function AMHChain(proc::AdaptiveMH,
     # Optionally initialize constraints based of DDP
     if !isnothing(proc.ddp)
         constraints = proc.ddp(proc.ddp_args...)
-        constraints = merge!(obs)
+        merge!(constraints, obs)
     else
         constraints = obs
     end

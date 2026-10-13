@@ -113,15 +113,15 @@ end
 begin
 	DATA     = get(ENV, "DDP_DATA",     "/spaths/datasets/ddp_train_11f_32x32.hdf5")
 	VAE_CKPT = get(ENV, "DDP_VAE_CKPT", "/spaths/checkpoints/fluxvae_e30.weights.jld2")
-	OCC_CKPT = get(ENV, "DDP_OCC_CKPT", "/spaths/checkpoints/fluxocc_e30.weights.jld2")  # NB: test_ddp.jl had a DDP_VAE_CKPT typo here
+	OCC_CKPT = get(ENV, "DDP_OCC_CKPT", "/spaths/checkpoints/fluxocc_e30.weights.jld2")
 
 	const DATA_DEPTH_MIN = 3.971077f0
 	const DATA_DEPTH_MAX = 10.181246f0
 
 	# DDP -> quadtree parameters
-	QT_VAR       = 0.01      # split threshold on node footprint std
-	QT_MAX_LEVEL = 3         # 8x8 max leaves
-	QT_MAX_DEPTH = 4
+	QT_VAR       = 0.36      # split threshold on node footprint std
+	QT_MAX_LEVEL = 4         # 8x8 max leaves
+	QT_MAX_DEPTH = 6
 
 	# inference chain
 	N_CHAIN_STEPS = 60
@@ -150,7 +150,7 @@ function run_model()
     r = load_room(1)
 
     
-    pixel_var = Float32(.01)
+    pixel_var = Float32(.05)
      renderer = QuadTreeRenderer(
         ;
         image_res = IMG_RES,
@@ -172,10 +172,9 @@ function run_model()
     depth_for_ddp = reshape(depth, 256, 256, 1, 1)
     depth_for_ddp .-= DATA_DEPTH_MIN
     depth_for_ddp .*= 1f0 / DATA_DEPTH_MAX
-    @show size(depth_for_ddp)
     qt_vae = GS.qt_ddp(dds, depth_for_ddp)
-    @show typeof(cm)
-    @show typeof(qt_vae)
+
+    @show GS.nleaves(qt_vae)
     GS.cm_from_qt!(cm, qt_vae)
 
     
@@ -210,11 +209,11 @@ function run_model()
     ac = AdaptiveComputation{QTVisionTrace}(
         ;
         load = 10,
-        itemp = 1,
+        itemp = 2,
     )
     attention_module = AttentionModule(ac)
 
-    mo = MO(;window=10)
+    mo = MO(;window=20)
     granularity_module = GranularityModule(mo, qt_vae.schema)
 
     println("Pre-attentive Perception")
@@ -227,7 +226,7 @@ function run_model()
 
     println("Attention Loop")
 
-    for _ = 1:50
+    for _ = 1:200
         @time step_module!(attention_module, vision_module, planning_module)
         @time step_module!(granularity_module, attention_module, vision_module, planning_module)
     end
@@ -243,7 +242,7 @@ function run_model()
     map_depth = depth_map_array(map_trace[:depth])
 
     gt_room = r
-    (; gt_room, gt_depth, qt_vae, map_depth, path_viz, att_viz)
+    (; gt_room, gt_depth, qt_vae, map_trace, map_depth, path_viz, att_viz, renderer)
 end
 
 
@@ -256,14 +255,17 @@ run.gt_depth
 # ╔═╡ 7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
 run.map_depth
 
+# ╔═╡ af4439b6-6bb5-41dd-be5a-f9820a2aa5f3
+extrema(run.map_trace[:qt => :weights])
+
 # ╔═╡ 2991cb98-187b-4b21-a47e-e32e04346353
 run.att_viz
 
-# ╔═╡ db88ff55-b7f0-4ea4-b63f-d36178efd42f
-run.path_viz
+# ╔═╡ 327e0967-9bd0-461b-804f-cbf542fa6496
+qt_topdown(run.qt_vae)
 
 # ╔═╡ 07b90484-8f48-4c17-a4ce-271d618c5d25
-qt_topdown(run.qt_vae)
+qt_topdown(run.map_trace[])
 
 # ╔═╡ 4e263aee-7db2-45ce-b8be-375d4806318f
 qt_topdown(run.gt_room)
@@ -273,8 +275,9 @@ qt_topdown(run.gt_room)
 # ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
 # ╠═290f6e10-8b16-4646-86bf-9d79d9831919
 # ╠═7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
+# ╠═af4439b6-6bb5-41dd-be5a-f9820a2aa5f3
 # ╠═2991cb98-187b-4b21-a47e-e32e04346353
-# ╠═db88ff55-b7f0-4ea4-b63f-d36178efd42f
+# ╠═327e0967-9bd0-461b-804f-cbf542fa6496
 # ╠═07b90484-8f48-4c17-a4ce-271d618c5d25
 # ╠═4e263aee-7db2-45ce-b8be-375d4806318f
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
