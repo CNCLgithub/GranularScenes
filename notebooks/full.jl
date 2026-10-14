@@ -4,6 +4,18 @@
 using Markdown
 using InteractiveUtils
 
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    #! format: off
+    return quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+    #! format: on
+end
+
 # ╔═╡ 1d39e7ee-a6e3-11f1-3258-19edf57342c6
 begin
 	using Pkg
@@ -17,6 +29,7 @@ begin
 	using CUDA
 	using Colors
 	using StaticArrays
+	using FileIO
 
 	import Flux
 
@@ -113,15 +126,15 @@ end
 begin
 	DATA     = get(ENV, "DDP_DATA",     "/spaths/datasets/ddp_train_11f_32x32.hdf5")
 	VAE_CKPT = get(ENV, "DDP_VAE_CKPT", "/spaths/checkpoints/fluxvae_e30.weights.jld2")
-	OCC_CKPT = get(ENV, "DDP_OCC_CKPT", "/spaths/checkpoints/fluxocc_e30.weights.jld2")
+	OCC_CKPT = get(ENV, "DDP_OCC_CKPT", "/spaths/checkpoints/fluxocc_e30.weights.jld2")  # NB: test_ddp.jl had a DDP_VAE_CKPT typo here
 
 	const DATA_DEPTH_MIN = 3.971077f0
 	const DATA_DEPTH_MAX = 10.181246f0
 
 	# DDP -> quadtree parameters
-	QT_VAR       = 0.36      # split threshold on node footprint std
-	QT_MAX_LEVEL = 4         # 8x8 max leaves
-	QT_MAX_DEPTH = 6
+	QT_VAR       = 0.01      # split threshold on node footprint std
+	QT_MAX_LEVEL = 3         # 8x8 max leaves
+	QT_MAX_DEPTH = 4
 
 	# inference chain
 	N_CHAIN_STEPS = 60
@@ -150,7 +163,7 @@ function run_model()
     r = load_room(1)
 
     
-    pixel_var = Float32(.05)
+    pixel_var = Float32(.01)
      renderer = QuadTreeRenderer(
         ;
         image_res = IMG_RES,
@@ -170,12 +183,11 @@ function run_model()
     cm = choicemap(:depth => depth)
 
     depth_for_ddp = reshape(depth, 256, 256, 1, 1)
-    depth_for_ddp .-= DATA_DEPTH_MIN
-    depth_for_ddp .*= 1f0 / DATA_DEPTH_MAX
-    qt_vae = GS.qt_ddp(dds, depth_for_ddp)
-
-    @show GS.nleaves(qt_vae)
-    GS.cm_from_qt!(cm, qt_vae)
+    @show size(depth_for_ddp)
+    qt = GS.qt_ddp(dds, depth_for_ddp)
+    @show typeof(cm)
+    @show typeof(qt)
+    GS.cm_from_qt!(cm, qt)
 
     
     vision_prior = QTVisionPrior()
@@ -185,7 +197,7 @@ function run_model()
     vision_prot = AdaptiveMH(
         ;
                             model = qt_vision,
-                            model_args = (qt_vae.schema, vision_prior, vision_obsm),
+                            model_args = (qt.schema, vision_prior, vision_obsm),
                             obs = cm,
                              chain_length = 1000,
                             )
@@ -208,13 +220,13 @@ function run_model()
 
     ac = AdaptiveComputation{QTVisionTrace}(
         ;
-        load = 10,
-        itemp = 2,
+        load = 5,
+        itemp = 1,
     )
     attention_module = AttentionModule(ac)
 
-    mo = MO(;window=20)
-    granularity_module = GranularityModule(mo, qt_vae.schema)
+    mo = MO(;window=10)
+    granularity_module = GranularityModule(mo, qt.schema)
 
     println("Pre-attentive Perception")
     @time for _ = 1:10
@@ -226,9 +238,21 @@ function run_model()
 
     println("Attention Loop")
 
-    for _ = 1:200
+    # Per-frame attention heatmaps: saved to att_dir and examined below with
+    # a slider. The latest trace of the vision module is rendered after each
+    # step pair, so the frame reflects the schema state at that iteration
+    # (including any split/merge reframes applied by the granularity module).
+    att_dir = joinpath(@__DIR__, "att_frames")
+    isdir(att_dir) && rm(att_dir; recursive = true)
+    mkpath(att_dir)
+
+    for t = 1:300
         @time step_module!(attention_module, vision_module, planning_module)
         @time step_module!(granularity_module, attention_module, vision_module, planning_module)
+
+        qt_t = get_retval(vision_module.state.samples[end])
+        img_t = att_topdown(qt_t, attention_module)
+        save(joinpath(att_dir, @sprintf("frame_%03d.png", t)), img_t)
     end
     
     best_path_idx, best_path_vec = GranularScenes.best_path(planning_module)
@@ -241,44 +265,48 @@ function run_model()
     map_trace, _... = Gen.regenerate(map_trace, select(:depth))
     map_depth = depth_map_array(map_trace[:depth])
 
-    gt_room = r
-    (; gt_room, gt_depth, qt_vae, map_trace, map_depth, path_viz, att_viz, renderer)
+    gt_topdown = room_topdown(r)
+    (gt_topdown, gt_depth, map_depth, path_viz, att_viz, att_dir)
 end
 
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
-run = run_model();
+gt_topdown, gt_depth, map_depth, best_path, att_vis, att_dir = run_model();
 
 # ╔═╡ 290f6e10-8b16-4646-86bf-9d79d9831919
-run.gt_depth
+gt_depth
 
 # ╔═╡ 7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
-run.map_depth
-
-# ╔═╡ af4439b6-6bb5-41dd-be5a-f9820a2aa5f3
-extrema(run.map_trace[:qt => :weights])
+map_depth
 
 # ╔═╡ 2991cb98-187b-4b21-a47e-e32e04346353
-run.att_viz
+att_vis
 
-# ╔═╡ 327e0967-9bd0-461b-804f-cbf542fa6496
-qt_topdown(run.qt_vae)
-
-# ╔═╡ 07b90484-8f48-4c17-a4ce-271d618c5d25
-qt_topdown(run.map_trace[])
+# ╔═╡ db88ff55-b7f0-4ea4-b63f-d36178efd42f
+best_path
 
 # ╔═╡ 4e263aee-7db2-45ce-b8be-375d4806318f
-qt_topdown(run.gt_room)
+gt_topdown
+
+# ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bec1
+begin
+    att_frames = sort(readdir(att_dir; join = true))
+    @bind att_frame Slider(1:length(att_frames); default = 1, show_value = true)
+end
+
+# ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bec2
+begin
+    length(att_frames) == 0 && error("No frames saved in $(att_dir)")
+    load(att_frames[att_frame])
+end
 
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
 # ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
 # ╠═290f6e10-8b16-4646-86bf-9d79d9831919
 # ╠═7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
-# ╠═af4439b6-6bb5-41dd-be5a-f9820a2aa5f3
 # ╠═2991cb98-187b-4b21-a47e-e32e04346353
-# ╠═327e0967-9bd0-461b-804f-cbf542fa6496
-# ╠═07b90484-8f48-4c17-a4ce-271d618c5d25
+# ╠═db88ff55-b7f0-4ea4-b63f-d36178efd42f
 # ╠═4e263aee-7db2-45ce-b8be-375d4806318f
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
@@ -287,3 +315,5 @@ qt_topdown(run.gt_room)
 # ╠═7982dc9c-7e3a-481c-9973-f29b2bac96a1
 # ╠═b0f77a86-186e-462e-928f-9d857aecc307
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
+# ╠═a61eabea-5349-4121-a63f-cd7c9b52bec1
+# ╠═a61eabea-5349-4121-a63f-cd7c9b52bec2

@@ -44,8 +44,8 @@ function step_module!(mo::MentalModule{MO},
 
     @show move
 
-    apply_split_merge_move!(move, mo)
-    apply_split_merge_move!(move, vision)
+    diff = maybe_split_merge_move!(move, mo)
+    apply_split_merge_move!(diff, vision)
     step_module!(planning, vision)
     return nothing
 end
@@ -125,11 +125,15 @@ function merge_kernel(g::QTSchema, tr::Vector{Float64})
     MergeMove(parent)
 end
 
-function apply_split_merge_move!(move::MergeMove,
+
+const LOG4 = log(4.0)
+
+function maybe_split_merge_move!(move::MergeMove,
                                  mo::MentalModule{<:MO})
     parent = move.node
     mo_prot, mo_state = mparse(mo)
     ti = mo_state.time_integral
+    normed_ti = logsumexp(ti)
     maxd = max_level(mo_state.schema)
 
     # Stack-based traversal of the subtree rooted at `parent`. Terminal
@@ -138,17 +142,20 @@ function apply_split_merge_move!(move::MergeMove,
     # children. The pooled weights telescope to the area of `parent`,
     # so `pooled - logwsum` is the area-weighted linear average of the
     # subtree's occupancy in log space.
+    log_parent_area = -Int64(depth(parent)) * LOG4
     stack = [parent]
-    pooled = -Inf
-    logwsum = -Inf
+    cumulative = -Inf
+    weighted_average = -Inf
+    task_anergy = -Inf
     removed = NodeId[]
-    log4 = log(4.0)
     while !isempty(stack)
         n = pop!(stack)
         if haskey(ti, n)
             d = Int64(depth(n))
-            pooled = logsumexp(ti[n] - d * log4, pooled)
-            logwsum = logsumexp(-d * log4, logwsum)
+            log_area = -d * LOG4 
+            cumulative = logsumexp(ti[n], cumulative)
+            weighted_average = logsumexp(ti[n] + log_area, pooled)
+            task_anergy = logsumexp(normed_ti - ti[n], task_anergy)
             push!(removed, n)
         elseif Int64(depth(n)) < maxd
             for j = 1:4
@@ -159,23 +166,39 @@ function apply_split_merge_move!(move::MergeMove,
     isempty(removed) &&
         throw(ArgumentError("No terminal descendants under $parent"))
 
-    # delete terminal descendants, then add parent
-    for k in removed
-        delete!(ti, k)
+
+    parent_ti = weighted_average - log_parent_area
+    delta_exergy = parent_ti - cumulative
+    delta_anergy = (normed_ti - parent_ti) - task_anergy
+    delta_mo = delta_exergy - delta_anergy
+
+    if log(rand()) < delta_mo
+        # delete terminal descendants, then add parent
+        for k in removed
+            delete!(ti, k)
+        end
+        ti[parent] = parent_ti
+
+        new_leaves = collect(NodeId, keys(ti))
+        sort!(new_leaves)
+
+        ps = mo_state.schema
+        mo_state.schema = QTSchema(maxd,
+                                   bounds(ps),
+                                   new_leaves)
+        return QTDiff(
+            [parent],
+            removed
+        )
+        
     end
-    ti[parent] = pooled - logwsum
-
-    new_leaves = collect(NodeId, keys(ti))
-    sort!(new_leaves)
-
-    ps = mo_state.schema
-    mo_state.schema = QTSchema(maxd,
-                               bounds(ps),
-                               new_leaves)
-    return nothing
+    return QTDiff()
 end
 
-function apply_split_merge_move!(move::SplitMove,
+const LOG3 = log(3)
+const LOG12 = log(12)
+
+function maybe_split_merge_move!(move::SplitMove,
                                  mo::MentalModule{<:MO})
     node = move.node
     mo_prot, mo_state = mparse(mo)
@@ -185,22 +208,37 @@ function apply_split_merge_move!(move::SplitMove,
     node.depth < max_level(mo_state.schema) ||
         throw(ArgumentError("leaf at max level: $node"))
 
-    w = mo_state.time_integral[node]
-    kids = [child_key(node, j) for j in 1:4]
-    for k in kids
-        mo_state.time_integral[k] = w
+    ti = mo_state.time_integral
+    mass = logsumexp(ti)
+    
+    w = ti[node]
+
+    delta_exergy = LOG3+w
+    delta_anergy = logsumexp(LOG3+mass-w, LOG12)
+    delta_mo = delta_exergy - delta_anergy
+
+    if log(rand()) < delta_mo
+        kids = [child_key(node, j) for j in 1:4]
+        for k in kids
+            mo_state.time_integral[k] = w
+        end
+        delete!(mo_state.time_integral, node)
+
+        new_leaves = collect(NodeId, keys(mo_state.time_integral))
+        sort!(new_leaves)
+
+        mo_state.schema =
+            QTSchema(max_level(mo_state.schema),
+                     bounds(mo_state.schema),
+                     new_leaves)
+
+        return QTDiff(
+            kids,
+            [parent]
+        )
+        
     end
-    delete!(mo_state.time_integral, node)
-
-    new_leaves = collect(NodeId, keys(mo_state.time_integral))
-    sort!(new_leaves)
-
-    mo_state.schema =
-        QTSchema(max_level(mo_state.schema),
-                 bounds(mo_state.schema),
-                 new_leaves)
-
-    return nothing
+    return QTDiff()
 end
 
 
