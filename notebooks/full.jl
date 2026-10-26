@@ -4,6 +4,18 @@
 using Markdown
 using InteractiveUtils
 
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    #! format: off
+    return quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+    #! format: on
+end
+
 # ╔═╡ 1d39e7ee-a6e3-11f1-3258-19edf57342c6
 begin
 	using Pkg
@@ -28,6 +40,27 @@ begin
 	import GranularScenes as GS
 end
 
+
+# ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bec1
+begin
+	using Base64
+	# Pluto sanitises markdown, which strips `data:` image sources. So the table is
+	# emitted as a raw HTML cell output instead: a cell's own display output is not
+	# sanitised, and an `img` with a data URI renders normally there.
+	struct RawHTML
+		html::String
+	end
+
+	Base.show(io::IO, ::MIME"text/html", h::RawHTML) = print(io, h.html)
+
+	function png_uri(img)
+		io = IOBuffer()
+		FileIO.save(FileIO.Stream{FileIO.format"PNG"}(io), img)
+		return "data:image/png;base64," * base64encode(take!(io))
+	end
+
+	img_html(img; w = 256) = "<img width=\"$w\" style=\"image-rendering:pixelated\" src=\"$(png_uri(img))\">"
+end
 
 # ╔═╡ d697c7c5-664d-4273-a24a-78823aab6bae
 html"""
@@ -125,9 +158,7 @@ begin
 	QT_MAX_DEPTH = 4
 
 	# inference chain
-	N_CHAIN_STEPS = 60
-	VIZ_EVERY     = 5
-	MARGIN_SIZE   = 50
+	N_CHAIN_STEPS = 500
 end
 
 
@@ -151,7 +182,7 @@ function run_model()
     r = load_room(1)
 
     
-    pixel_var = Float32(.01)
+    pixel_var = Float32(.05)
      renderer = QuadTreeRenderer(
         ;
         image_res = IMG_RES,
@@ -187,7 +218,7 @@ function run_model()
                             model = qt_vision,
                             model_args = (qt.schema, vision_prior, vision_obsm),
                             obs = cm,
-                             chain_length = 1000,
+                             chain_length = 20,
                             )
 
     vision_module = PerceptionModule(vision_prot, cm)
@@ -226,23 +257,52 @@ function run_model()
 
     println("Attention Loop")
 
-    # Per-frame attention heatmaps: saved to att_dir and examined below with
-    # a slider. The latest trace of the vision module is rendered after each
-    # step pair, so the frame reflects the schema state at that iteration
-    # (including any split/merge reframes applied by the granularity module).
-    att_dir = joinpath(@__DIR__, "att_frames")
-    isdir(att_dir) && rm(att_dir; recursive = true)
-    mkpath(att_dir)
+    # Rollout inspection. Panels stay at their native resolution (a 4x4 or
+    # 16x16 quadtree image, a 256x256 depth map) and are upscaled once, for the
+    # frame the slider selects. A 16x16 RGB{Float64} panel is 6 kB, so 100
+    # frames cost ~110 MB; retained 256x256 montages cost ~600 MB.
+    gt_occ   = room_topdown(r)                                        # 16x16, static
+    gt_panel = GS.viz_depth(depth; lo = DATA_DEPTH_MIN, hi = DATA_DEPTH_MAX)
 
-    for t = 1:100
-        @time step_module!(attention_module, vision_module, planning_module)
-        @time step_module!(granularity_module, attention_module, vision_module, planning_module)
+    path_panels = Vector{Matrix{RGB{Float64}}}(undef, N_CHAIN_STEPS)
+    att_panels  = Vector{Matrix{RGB{Float64}}}(undef, N_CHAIN_STEPS)
+    pred_panels = Vector{Matrix{RGB{Float64}}}(undef, N_CHAIN_STEPS)
+    err_panels  = Vector{Matrix{RGB{Float64}}}(undef, N_CHAIN_STEPS)
 
-        #qt_t = get_retval(vision_module.state.samples[end])
-        #img_t = att_topdown(qt_t, attention_module)
-        #save(joinpath(att_dir, @sprintf("frame_%03d.png", t)), img_t)
+    n_leaves = Vector{Int}(undef, N_CHAIN_STEPS)
+    ms_att   = Vector{Float64}(undef, N_CHAIN_STEPS)
+    ms_gran  = Vector{Float64}(undef, N_CHAIN_STEPS)
+
+    for t = 1:N_CHAIN_STEPS
+        ta = @timed step_module!(attention_module, vision_module, planning_module)
+        tg = @timed step_module!(granularity_module, attention_module, vision_module, planning_module)
+
+        # The frame is the MAP trace of the current vision module, i.e. the
+        # state the next step will condition on.
+        pred_trace = maximum_aposteriori(vision_module)
+        pred_trace, = Gen.regenerate(pred_trace, select(:depth))
+        pred_panel = GS.viz_depth(pred_trace[:depth]; lo = DATA_DEPTH_MIN, hi = DATA_DEPTH_MAX)
+
+        bp_idx, bp_vec = GranularScenes.best_path(planning_module)
+        bp_qt = get_retval(vision_module.state.samples[bp_idx])
+
+        ms_att[t] = 1e3 * ta.time
+        ms_gran[t] = 1e3 * tg.time
+        n_leaves[t] = GS.nleaves(granularity_module.state.schema)
+        path_panels[t] = qt_topdown(bp_qt, bp_vec)
+        att_panels[t] =  att_topdown(bp_qt, attention_module)
+        pred_panels[t] =  pred_panel
+        err_panels[t] =  GS.viz_err(gt_panel, pred_panel)
+
+        #pred_trace = nothing
+        #t % 10 == 0 && GC.gc(false)   # prompt-snapshot garbage from the renderer
     end
-    
+
+    frames = (; gt_occ, gt_panel,
+                path = path_panels, att = att_panels,
+                pred = pred_panels, err = err_panels,
+                t = collect(1:N_CHAIN_STEPS), n_leaves, ms_att, ms_gran)
+
     best_path_idx, best_path_vec = GranularScenes.best_path(planning_module)
     best_path_qt = get_retval(vision_module.state.samples[best_path_idx])
     path_viz = qt_topdown(best_path_qt, best_path_vec)
@@ -253,13 +313,13 @@ function run_model()
     map_trace, _... = Gen.regenerate(map_trace, select(:depth))
     map_depth = depth_map_array(map_trace[:depth])
 
-    gt_topdown = room_topdown(r)
-    (gt_topdown, gt_depth, map_depth, path_viz, att_viz, att_dir)
+    gt_topdown = gt_occ
+    (; gt_topdown, gt_depth, map_depth, best_path = path_viz, att_vis = att_viz, frames)
 end
 
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
-gt_topdown, gt_depth, map_depth, best_path, att_vis, att_dir = run_model();
+(; gt_topdown, gt_depth, map_depth, best_path, att_vis, frames) = run_model();
 
 # ╔═╡ 290f6e10-8b16-4646-86bf-9d79d9831919
 gt_depth
@@ -276,22 +336,28 @@ best_path
 # ╔═╡ 4e263aee-7db2-45ce-b8be-375d4806318f
 gt_topdown
 
-# ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bec1
-# ╠═╡ disabled = true
-#=╠═╡
-begin
-    att_frames = sort(readdir(att_dir; join = true))
-    @bind att_frame Slider(1:length(att_frames); default = 1, show_value = true)
-end
-  ╠═╡ =#
-
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bec2
-#=╠═╡
-begin
-    length(att_frames) == 0 && error("No frames saved in $(att_dir)")
-    load(att_frames[att_frame])
+@bind frame_i Slider(1:length(frames.t); default = 1, show_value = true)
+
+# ╔═╡ 0d1f4a02-6b2e-4b7c-9f1a-2c5e8d3a7b04
+let i = frame_i
+	cell(img) = "<td style=\"text-align:center;padding:4px\">$(img_html(img))</td>"
+	head(s)   = "<th style=\"font-weight:600;padding:4px\">$s</th>"
+	RawHTML("""
+	<div style=\"font-family:sans-serif\">
+	<b>step $(frames.t[i]) / $(last(frames.t))</b> · leaves
+	<b>$(frames.n_leaves[i])</b> · attention
+	<b>$(round(frames.ms_att[i], digits = 1)) ms</b> · granularity
+	<b>$(round(frames.ms_gran[i], digits = 1)) ms</b>
+	</div>
+	<table style=\"border-collapse:separate;border-spacing:4px\">
+	<tr>$(head("occupancy"))$(head("best path"))$(head("attention"))</tr>
+	<tr>$(cell(frames.gt_occ))$(cell(frames.path[i]))$(cell(frames.att[i]))</tr>
+	<tr>$(head("gt depth"))$(head("MAP depth"))$(head("abs err"))</tr>
+	<tr>$(cell(frames.gt_panel))$(cell(frames.pred[i]))$(cell(frames.err[i]))</tr>
+	</table>
+	""")
 end
-  ╠═╡ =#
 
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
@@ -310,3 +376,4 @@ end
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bec1
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bec2
+# ╠═0d1f4a02-6b2e-4b7c-9f1a-2c5e8d3a7b04

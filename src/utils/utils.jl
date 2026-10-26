@@ -366,3 +366,4 @@ end
 include("datastructures.jl")
 include("dataset.jl")
 include("visuals.jl")
+include("viz_grid.jl")

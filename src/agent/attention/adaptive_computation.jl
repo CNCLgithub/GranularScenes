@@ -146,6 +146,8 @@ function attend!(att::MentalModule{AdaptiveComputation},
     tload = aprotocol.load # load(aprotocol, deltas)
     # Number of latents to choose from
     n = length(importance)
+
+    acceptance_ratio = 0.0
     for step = 1:(base_steps + tload)
         idx = step <= base_steps ?
             uniform_discrete(1, n) :
@@ -159,14 +161,15 @@ function attend!(att::MentalModule{AdaptiveComputation},
             push!(vstate.samples, new_trace)
             # increment weight
             push!(vstate.weights, vstate.weights[end] + w)
-            # dS = w * min(exp(w), 1.0)
-        # else
-        #     dS = -Inf
+            acceptance_ratio += 1.0
         end
 
         dS = min(w, 0.)
         update_impact!(astate.dS, vis_partition, new_trace, idx, dS)
     end
+
+    acceptance_ratio *= 100.0 / (base_steps + tload)
+    @printf "Acceptance ratio: %3.0f%%\n" acceptance_ratio
     return nothing
 end
 
