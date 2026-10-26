@@ -223,6 +223,12 @@ function qt_from_state(var::Float64, state::Matrix{<:Real},
 
     sort!(leaves)
     schema = QTSchema(max_level, AABB2D(-0.5, -0.5, 0.5, 0.5), leaves)
+    # Report % leaves activated
+    n = length(leaves)
+    r, c = size(state)
+    nmax = r * c
+    prop = 100 * n / nmax
+    @printf "DDP #leaves: %4d / %4d (%3.0f%%) \n" n nmax prop
     return QuadTree(schema, weight_map)
 end
 

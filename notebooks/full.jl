@@ -4,18 +4,6 @@
 using Markdown
 using InteractiveUtils
 
-# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
-macro bind(def, element)
-    #! format: off
-    return quote
-        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
-        local el = $(esc(element))
-        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
-        el
-    end
-    #! format: on
-end
-
 # ╔═╡ 1d39e7ee-a6e3-11f1-3258-19edf57342c6
 begin
 	using Pkg
@@ -225,7 +213,7 @@ function run_model()
     )
     attention_module = AttentionModule(ac)
 
-    mo = MO(;window=10)
+    mo = MO(;window=5)
     granularity_module = GranularityModule(mo, qt.schema)
 
     println("Pre-attentive Perception")
@@ -250,9 +238,9 @@ function run_model()
         @time step_module!(attention_module, vision_module, planning_module)
         @time step_module!(granularity_module, attention_module, vision_module, planning_module)
 
-        qt_t = get_retval(vision_module.state.samples[end])
-        img_t = att_topdown(qt_t, attention_module)
-        save(joinpath(att_dir, @sprintf("frame_%03d.png", t)), img_t)
+        #qt_t = get_retval(vision_module.state.samples[end])
+        #img_t = att_topdown(qt_t, attention_module)
+        #save(joinpath(att_dir, @sprintf("frame_%03d.png", t)), img_t)
     end
     
     best_path_idx, best_path_vec = GranularScenes.best_path(planning_module)
@@ -289,16 +277,21 @@ best_path
 gt_topdown
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bec1
+# ╠═╡ disabled = true
+#=╠═╡
 begin
     att_frames = sort(readdir(att_dir; join = true))
     @bind att_frame Slider(1:length(att_frames); default = 1, show_value = true)
 end
+  ╠═╡ =#
 
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bec2
+#=╠═╡
 begin
     length(att_frames) == 0 && error("No frames saved in $(att_dir)")
     load(att_frames[att_frame])
 end
+  ╠═╡ =#
 
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
