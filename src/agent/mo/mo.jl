@@ -45,7 +45,9 @@ function step_module!(mo::MentalModule{MO},
     @show move
 
     diff = maybe_split_merge_move!(move, mo)
-    apply_split_merge_move!(diff, vision)
+
+    @show diff.move
+    apply_split_merge_diff!(diff, vision)
     step_module!(planning, vision)
     return nothing
 end
@@ -59,6 +61,8 @@ function time_integrate!(mo_state::MOState,
     aprot, astate = mparse(attention)
 
     is_ready(astate) || return nothing
+
+    @show nleaves(mo_state.schema)
     
     for node = leaves(mo_state.schema)
         coord = get_coord(aprot.vis_partition, mo_state.schema, node)
@@ -90,6 +94,8 @@ function split_prob(g::QTSchema)
 end
 
 abstract type Reframe end
+
+struct NoReframe <: Reframe end
 
 struct SplitMove <: Reframe
     node::NodeId
@@ -133,7 +139,7 @@ function maybe_split_merge_move!(move::MergeMove,
     parent = move.node
     mo_prot, mo_state = mparse(mo)
     ti = mo_state.time_integral
-    normed_ti = logsumexp(ti)
+    normed_ti = logsumexp(collect(values(ti)))
     maxd = max_level(mo_state.schema)
 
     # Stack-based traversal of the subtree rooted at `parent`. Terminal
@@ -145,7 +151,8 @@ function maybe_split_merge_move!(move::MergeMove,
     log_parent_area = -Int64(depth(parent)) * LOG4
     stack = [parent]
     cumulative = -Inf
-    weighted_average = -Inf
+    # weighted_average = -Inf
+    weighted_average = Inf
     task_anergy = -Inf
     removed = NodeId[]
     while !isempty(stack)
@@ -153,8 +160,10 @@ function maybe_split_merge_move!(move::MergeMove,
         if haskey(ti, n)
             d = Int64(depth(n))
             log_area = -d * LOG4 
+            @show ti[n]
             cumulative = logsumexp(ti[n], cumulative)
-            weighted_average = logsumexp(ti[n] + log_area, pooled)
+            #weighted_average = logsumexp(ti[n] + log_area, weighted_average)
+            weighted_average = min(ti[n], weighted_average)
             task_anergy = logsumexp(normed_ti - ti[n], task_anergy)
             push!(removed, n)
         elseif Int64(depth(n)) < maxd
@@ -167,10 +176,22 @@ function maybe_split_merge_move!(move::MergeMove,
         throw(ArgumentError("No terminal descendants under $parent"))
 
 
-    parent_ti = weighted_average - log_parent_area
+    # approximate TR of proposed node
+    # parent_ti = weighted_average - log_parent_area
+    # parent_ti = cumulative - log(length(removed))
+    parent_ti = weighted_average
+    # difference (log-ratio) with deleted children
+    # ; should generally be negative
     delta_exergy = parent_ti - cumulative
+    # difference (log-ratio), 
     delta_anergy = (normed_ti - parent_ti) - task_anergy
     delta_mo = delta_exergy - delta_anergy
+
+    @show parent_ti
+    @show normed_ti
+    @show delta_exergy
+    @show delta_anergy
+    @show delta_mo
 
     if log(rand()) < delta_mo
         # delete terminal descendants, then add parent
@@ -187,6 +208,7 @@ function maybe_split_merge_move!(move::MergeMove,
                                    bounds(ps),
                                    new_leaves)
         return QTDiff(
+            move,
             [parent],
             removed
         )
@@ -195,7 +217,18 @@ function maybe_split_merge_move!(move::MergeMove,
     return QTDiff()
 end
 
+struct QTDiff
+    move::Reframe
+    to_add::Vector{NodeId}
+    to_rem::Vector{NodeId}
+end
+
+function QTDiff()
+    QTDiff(NoReframe(), NodeId[], NodeId[])
+end
+
 const LOG3 = log(3)
+const LOG4 = log(4)
 const LOG12 = log(12)
 
 function maybe_split_merge_move!(move::SplitMove,
@@ -209,7 +242,7 @@ function maybe_split_merge_move!(move::SplitMove,
         throw(ArgumentError("leaf at max level: $node"))
 
     ti = mo_state.time_integral
-    mass = logsumexp(ti)
+    mass = logsumexp(collect(values(ti)))
     
     w = ti[node]
 
@@ -217,6 +250,11 @@ function maybe_split_merge_move!(move::SplitMove,
     delta_anergy = logsumexp(LOG3+mass-w, LOG12)
     delta_mo = delta_exergy - delta_anergy
 
+    @show w
+    @show mass
+    @show delta_exergy
+    @show delta_anergy
+    @show delta_mo
     if log(rand()) < delta_mo
         kids = [child_key(node, j) for j in 1:4]
         for k in kids
@@ -233,8 +271,9 @@ function maybe_split_merge_move!(move::SplitMove,
                      new_leaves)
 
         return QTDiff(
+            move,
             kids,
-            [parent]
+            [node]
         )
         
     end
@@ -243,6 +282,8 @@ end
 
 
 function apply_move(move::SplitMove,
+                    to_add::Vector{NodeId},
+                    to_rem::Vector{NodeId},
                     qt::QuadTree)
     n = move.node
     haskey(qt.weight_map, n) || throw(ArgumentError("not a leaf: $n"))
@@ -272,6 +313,8 @@ function apply_move(move::SplitMove,
 end
 
 function apply_move(move::MergeMove,
+                    to_add::Vector{NodeId},
+                    to_rem::Vector{NodeId},
                     qt::QuadTree)
     parent = move.node
     maxd = max_level(qt.schema)
@@ -280,27 +323,13 @@ function apply_move(move::MergeMove,
     pooled = -Inf
     logwsum = -Inf
     removed = NodeId[]
-    log4 = log(4.0)
-    while !isempty(stack)
-        n = pop!(stack)
-        if haskey(new_weight_map, n)
-            d = Int64(depth(n))
-            pooled = logsumexp(new_weight_map[n] - d * log4, pooled)
-            logwsum = logsumexp(-d * log4, logwsum)
-            push!(removed, n)
-        elseif Int64(depth(n)) < maxd
-            for j = 1:4
-                push!(stack, child_key(n, j))
-            end
-        end
+    for n = to_rem
+        d = Int64(depth(n))
+        pooled = logsumexp(new_weight_map[n] - d * LOG4, pooled)
+        logwsum = logsumexp(-d * LOG4, logwsum)
+        delete!(new_weight_map, n)
     end
-    isempty(removed) &&
-        throw(ArgumentError("No terminal descendants under $parent"))
 
-    # delete terminal descendants, then add parent
-    for k in removed
-        delete!(new_weight_map, k)
-    end
     new_weight_map[parent] = pooled - logwsum
 
     new_leaves = collect(NodeId, keys(new_weight_map))
@@ -313,15 +342,19 @@ function apply_move(move::MergeMove,
     QuadTree(new_schema, new_weight_map)
 end
 
-function apply_move(move::Reframe,
+function apply_diff(diff::QTDiff,
                     trace::QTVisionTrace)
 
     _, rest_args... = get_args(trace)
     prev_qt = get_retval(trace)
 
-    new_qt = apply_move(move, prev_qt)
-    new_args = (new_qt.schema, rest_args...)
+    if typeof(diff.move) <: NoReframe
+        new_qt = prev_qt
+    else
+        new_qt = apply_move(diff.move, diff.to_add, diff.to_rem, prev_qt)
+    end
 
+    new_args = (new_qt.schema, rest_args...)
 
     lvs = leaves(new_qt)
     cm = choicemap()
@@ -331,16 +364,13 @@ function apply_move(move::Reframe,
         cm[:qt => :weights => i => :mean] = w
         cm[:qt => :weights => i => :w] = w
     end
-
     cm[:depth] = trace[:depth]
-
 
     trace, w = Gen.generate(qt_vision, new_args, cm)
 end
 
-function apply_split_merge_move!(move::Reframe,
+function apply_split_merge_diff!(diff::QTDiff,
                                  vision::MentalModule{<:AdaptiveMH})
-    node = move.node
     vprot, vstate = mparse(vision)
     # Re-init all traces with:
     # - new schema
@@ -349,7 +379,7 @@ function apply_split_merge_move!(move::Reframe,
     @inbounds for i = 1:ns
         trace = vstate.samples[i]
         vstate.samples[i], vstate.weights[i] =
-            apply_move(move, trace)
+            apply_diff(diff, trace)
     end
     return nothing
 end

@@ -246,7 +246,7 @@ function run_model()
     isdir(att_dir) && rm(att_dir; recursive = true)
     mkpath(att_dir)
 
-    for t = 1:300
+    for t = 1:100
         @time step_module!(attention_module, vision_module, planning_module)
         @time step_module!(granularity_module, attention_module, vision_module, planning_module)
 
