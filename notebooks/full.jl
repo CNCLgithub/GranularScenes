@@ -158,7 +158,7 @@ begin
 	QT_MAX_DEPTH = 4
 
 	# inference chain
-	N_CHAIN_STEPS = 500
+	N_CHAIN_STEPS = 700
 end
 
 
@@ -321,21 +321,6 @@ end
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bebb
 (; gt_topdown, gt_depth, map_depth, best_path, att_vis, frames) = run_model();
 
-# ╔═╡ 290f6e10-8b16-4646-86bf-9d79d9831919
-gt_depth
-
-# ╔═╡ 7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
-map_depth
-
-# ╔═╡ 2991cb98-187b-4b21-a47e-e32e04346353
-att_vis
-
-# ╔═╡ db88ff55-b7f0-4ea4-b63f-d36178efd42f
-best_path
-
-# ╔═╡ 4e263aee-7db2-45ce-b8be-375d4806318f
-gt_topdown
-
 # ╔═╡ a61eabea-5349-4121-a63f-cd7c9b52bec2
 @bind frame_i Slider(1:length(frames.t); default = 1, show_value = true)
 
@@ -346,7 +331,7 @@ let i = frame_i
 	RawHTML("""
 	<div style=\"font-family:sans-serif\">
 	<b>step $(frames.t[i]) / $(last(frames.t))</b> · leaves
-	<b>$(frames.n_leaves[i])</b> · attention
+	<b>$(frames.n_leaves[i]) / $(32*32)</b> · attention
 	<b>$(round(frames.ms_att[i], digits = 1)) ms</b> · granularity
 	<b>$(round(frames.ms_gran[i], digits = 1)) ms</b>
 	</div>
@@ -362,11 +347,6 @@ end
 # ╔═╡ Cell order:
 # ╟─d697c7c5-664d-4273-a24a-78823aab6bae
 # ╠═1d39e7ee-a6e3-11f1-3258-19edf57342c6
-# ╠═290f6e10-8b16-4646-86bf-9d79d9831919
-# ╠═7eb74e0e-10e8-4d69-9cfe-d88ca20d081b
-# ╠═2991cb98-187b-4b21-a47e-e32e04346353
-# ╠═db88ff55-b7f0-4ea4-b63f-d36178efd42f
-# ╠═4e263aee-7db2-45ce-b8be-375d4806318f
 # ╠═a61eabea-5349-4121-a63f-cd7c9b52bebb
 # ╠═14a33876-0998-47a2-a7ce-96cace0cd335
 # ╠═8d9add3f-dbc5-47c5-8ac3-3a7dbfc4ef94
@@ -374,6 +354,6 @@ end
 # ╠═7982dc9c-7e3a-481c-9973-f29b2bac96a1
 # ╠═b0f77a86-186e-462e-928f-9d857aecc307
 # ╠═67bb0b77-f540-480a-aa42-0188d0df1ca4
-# ╠═a61eabea-5349-4121-a63f-cd7c9b52bec1
-# ╠═a61eabea-5349-4121-a63f-cd7c9b52bec2
-# ╠═0d1f4a02-6b2e-4b7c-9f1a-2c5e8d3a7b04
+# ╟─a61eabea-5349-4121-a63f-cd7c9b52bec1
+# ╟─a61eabea-5349-4121-a63f-cd7c9b52bec2
+# ╟─0d1f4a02-6b2e-4b7c-9f1a-2c5e8d3a7b04

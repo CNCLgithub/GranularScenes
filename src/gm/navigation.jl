@@ -49,6 +49,7 @@ function qt_a_star(qt::QuadTree, obs_cost::Float64, ent::S2V, ext::S2V,
         end
         for node in keys(open_set)
             mass = exp(-(open_set[node] - fmin) / τ) / Z
+            # TODO: document better
             soft_mass[node] = get(soft_mass, node, 0.0) +
                 mass * obs_cost * exp2(node.depth - 1)
         end
